@@ -1,0 +1,9 @@
+analysis/*
+data/*
+.DS_Store
+.Rproj.user
+*.Rhistory
+*.Rproj
+tests/*
+*.pdf
+*.png
