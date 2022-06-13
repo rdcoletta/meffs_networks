@@ -35,12 +35,12 @@ optional argument:
 }
 
 getArgValue <- function(arg) {
-  
+
   # get value from command-line arguments
   arg <- unlist(strsplit(arg, "="))
   if (length(arg) == 1) return(TRUE)
   if (length(arg) > 1) return(arg[2])
-  
+
 }
 
 
@@ -67,12 +67,12 @@ pos_args <- 3
 if (length(args) < pos_args) stop(usage(), "missing positional argument(s)")
 
 if (length(args) > pos_args) {
-  
+
   opt_args <- args[-1:-pos_args]
-  opt_args_allowed <- c("--marker-eff-model", "--impute-type", "--impute-type", "--no-missing-genotypes")
+  opt_args_allowed <- c("--marker-eff-model", "--impute-effect", "--impute-type", "--no-missing-genotypes")
   opt_args_requested <- as.character(sapply(opt_args, function(x) unlist(strsplit(x, split = "="))[1]))
   if (any(!opt_args_requested %in% opt_args_allowed)) stop(usage(), "wrong optional argument(s)")
-  
+
   # change default based on the argument provided
   for (argument in opt_args_allowed) {
     if (any(grepl(argument, opt_args_requested))) {
@@ -81,7 +81,7 @@ if (length(args) > pos_args) {
       assign(arg_name, arg_value)
     }
   }
-  
+
 }
 
 # make sure optional arguments are valid
@@ -141,18 +141,18 @@ if (!all(rownames(markers) == rownames(means))) stop("IDs don't match between ge
 #### estimate marker effects ----
 
 if (marker_eff_model == "rrblup") {
-  
+
   cat("estimating marker effects by univariate rrBLUP\n")
-  
+
   # create empty df to store results
   marker_effects <- data.frame(matrix(ncol = 0, nrow = ncol(markers)))
   rownames(marker_effects) <- colnames(markers)
   gebvs <- data.frame(matrix(ncol = 0, nrow = nrow(means)))
   rownames(gebvs) <- rownames(means)
-  
+
   # estimate effects for each environment separately
   for (env in colnames(means)) {
-    
+
     # run rrblup
     rr_model <- mixed.solve(y = means[, env], Z = markers)
     # get effects
@@ -166,25 +166,25 @@ if (marker_eff_model == "rrblup") {
     # append effects to main df
     marker_effects <- cbind(marker_effects, marker_effects_env)
     gebvs <- cbind(gebvs, gebvs_env)
-    
+
   }
   rm(env, rr_model, gebvs_env, cor_obs_pred, marker_effects_env)
-  
+
 }
 
 if (marker_eff_model == "bayescpi") {
-  
+
   cat("estimating marker effects by univariate BayesCpi\n")
-  
+
   # create empty df to store results
   marker_effects <- data.frame(matrix(ncol = 0, nrow = ncol(markers)))
   rownames(marker_effects) <- colnames(markers)
   gebvs <- data.frame(matrix(ncol = 0, nrow = nrow(means)))
   rownames(gebvs) <- rownames(means)
-  
+
   # estimate effects for each environment separately
   for (env in colnames(means)) {
-    
+
     # run BayesCpi
     bcpi_model <- wgr(y = means[, env], X = as.matrix(markers), pi = 0.95, iv = FALSE)
     # get effects
@@ -199,16 +199,16 @@ if (marker_eff_model == "bayescpi") {
     # append effects to main df
     marker_effects <- cbind(marker_effects, marker_effects_env)
     gebvs <- cbind(gebvs, gebvs_env)
-    
+
   }
   rm(env, bcpi_model, gebvs_env, cor_obs_pred, marker_effects_env)
-  
+
 }
 
 if (marker_eff_model == "mrr") {
-  
+
   cat("estimating marker effects by multivariate ridge-regression\n")
-  
+
   # estimate effects
   mrr_model <- mrr(Y = as.matrix(means), X = as.matrix(markers))
   # get effects
@@ -224,22 +224,22 @@ if (marker_eff_model == "mrr") {
   for (env in names(cor_obs_pred)) {
     cat("  ", env, "- correlation obs vs pred:", round(as.numeric(cor_obs_pred[env]), digits = 2), "\n")
   }
-  
+
 }
 
 if (marker_eff_model == "gwas") {
-  
+
   cat("estimating marker effects by GWAS Q+K model\n")
-  
+
   # create empty df to store results
   marker_effects <- data.frame(matrix(ncol = 0, nrow = ncol(markers)))
   rownames(marker_effects) <- colnames(markers)
   gebvs <- data.frame(matrix(ncol = 0, nrow = nrow(means)))
   rownames(gebvs) <- rownames(means)
-  
+
   # estimate effects for each environment separately
   for (env in colnames(means)) {
-    
+
     # run gwas q+k
     pheno <- rownames_to_column(means[, env, drop = FALSE], var = "genotype")
     geno <- rownames_to_column(markers + 1, var = "genotype")
@@ -266,10 +266,10 @@ if (marker_eff_model == "gwas") {
     # append effects to main df
     marker_effects <- cbind(marker_effects, marker_effects_env)
     gebvs <- cbind(gebvs, gebvs_env)
-    
+
   }
   rm(env, pheno, geno, gwas_model, gebvs_env, cor_obs_pred, marker_effects_env)
-  
+
 }
 
 # write effects
