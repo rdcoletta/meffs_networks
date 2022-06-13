@@ -6,34 +6,117 @@ library(ggplot2)
 enableWGCNAThreads()
 options(stringsAsFactors = FALSE)
 
+usage <- function() {
+  cat("
+description: determine soft-threshold to use when building marker effect networks.
 
-marker_effects_file <- "analysis/marker_effects/YLD/marker_effects.txt"
-marker_info_file <- "data/usda_hybrids_projected-SVs-SNPs.poly.low-missing.pruned-100kb.geno-miss-0.25.hmp.txt"
-output_folder <- "analysis/networks/YLD"
-# norm_method <- "none"
-norm_method <- "minmax"
-# norm_method <- "zscore"
+usage: Rscript pick_soft_threshold.R [marker_effects_file] [marker_hmp_file] [output_folder] [...]
+
+positional arguments:
+  marker_effects_file         file containing marker effects for a trait (3 columns: environment, marker, effect)
+  marker_hmp_file             hapmap file containing marker data
+  output_folder               name of folder to save results
+
+optional argument:
+  --help                      show this helpful message
+  --norm-method               method to normalize effects across multiple environments. Available methods are
+                              'minmax' (default), 'zscore', 'none' (i.e. no normalization)
+  --cv-threshold              markers with coefficient of variation (CV) below this threshold will be removed.
+                              If number is provided, then an absolute cut-off will be applied. Alternatively,
+                              you can choose between 'Q1', 'Q2' or 'Q3' (default) to remove markers with CV below
+                              the first, second or third quantiles.
+  --debug                     add this option to randomly select 10,000 markers and speed up computation time
+
+
+"
+  )
+}
+
+getArgValue <- function(arg) {
+  
+  # get value from command-line arguments
+  arg <- unlist(strsplit(arg, "="))
+  if (length(arg) == 1) return(TRUE)
+  if (length(arg) > 1) return(arg[2])
+  
+}
+
+
+
+#### command line options ----
+
+args <- commandArgs(trailingOnly = TRUE)
+if ("--help" %in% args) usage() & q(save = "no")
+
+# get positional arguments
+marker_effects_file <- args[1]
+marker_hmp_file <- args[2]
+output_folder <- args[3]
 if (!dir.exists(output_folder)) dir.create(output_folder, recursive = TRUE)
 
+# set default of optional args
+norm_method <- "minmax"
+cv_threshold <- "Q3"
+debug <- FALSE
+
+# assert to have the correct optional arguments
+pos_args <- 3
+if (length(args) < pos_args) stop(usage(), "missing positional argument(s)")
+
+if (length(args) > pos_args) {
+  
+  opt_args <- args[-1:-pos_args]
+  opt_args_allowed <- c("--norm-method", "--cv-threshold", "--debug")
+  opt_args_requested <- as.character(sapply(opt_args, function(x) unlist(strsplit(x, split = "="))[1]))
+  if (any(!opt_args_requested %in% opt_args_allowed)) stop(usage(), "wrong optional argument(s)")
+  
+  # change default based on the argument provided
+  for (argument in opt_args_allowed) {
+    if (any(grepl(argument, opt_args_requested))) {
+      arg_name <- gsub("-", "_", gsub("--", "", argument))
+      arg_value <- getArgValue(opt_args[grep(argument, opt_args)])
+      assign(arg_name, arg_value)
+    }
+  }
+  
+}
+
+# make sure optional arguments are valid
+if (!norm_method %in% c("minmax", "zscore", "none") ) {
+  stop("Optional argument '--norm-method' should be 'minmax', 'zscore' or 'none'")
+}
+
+if (suppressWarnings(!is.na(as.numeric(cv_threshold)))) {
+  cv_threshold <- as.numeric(cv_threshold)
+} else {
+  if (!cv_threshold %in% c("Q1", "Q2", "Q3")) {
+    stop("Optional argument '--cv-threshold' should be a number or one of these quantiles: 'Q1', 'Q2' or 'Q3'")
+  } 
+}
 
 
-#### input file ----
+
+#### filter marker data ----
 
 # load marker effects
 marker_effects <- fread(marker_effects_file, header = TRUE, data.table = FALSE)
 marker_effects <- pivot_wider(marker_effects, names_from = "env", values_from = "effect")
-
-# # randomly sample markers to speed up
-# set.seed(8173)
-# marker_effects <- marker_effects[sample(1:nrow(marker_effects), size = 50000, replace = FALSE), ]
+colnames(marker_effects) <- gsub(".", "-", colnames(marker_effects), fixed = TRUE)
 
 # load marker info
-marker_info <- fread(marker_info_file, header = TRUE, data.table = FALSE)
+marker_info <- fread(marker_hmp_file, header = TRUE, data.table = FALSE)
 marker_info <- marker_info[, 1:4]
 
 # transform to rownames
 marker_effects <- column_to_rownames(marker_effects, "marker")
 marker_info <- column_to_rownames(marker_info, "rs#")
+
+if (debug) {
+  # randomly sample markers for testing
+  set.seed(2726)
+  marker_effects <- marker_effects[sort(sample(1:nrow(marker_effects), size = 10000, replace = FALSE)), ]
+  marker_info <- marker_info[match(rownames(marker_effects), rownames(marker_info)), ]
+}
 
 # normalize marker effects 
 if (norm_method == "minmax") {
@@ -55,9 +138,12 @@ if (norm_method == "zscore") {
 
 # calculate coefficient of variation
 markers_cv <- apply(marker_effects,  MARGIN = 1, function(marker) abs(sd(marker) / mean(marker)))
-# set a CV treshold
-cv_threshold <- as.numeric(quantile(markers_cv)[4])
-# cv_threshold <- 0.2
+# set CV treshold if a quantile (and not absolute) value was provided
+if (cv_threshold %in% c("Q1", "Q2", "Q3")) {
+  cv_threshold <- as.numeric(gsub("Q", "", cv_threshold))
+  cv_threshold <- as.numeric(quantile(markers_cv)[cv_threshold + 1])
+}
+# plot cv distribution
 plot_cv_cutoff <- ggplot(data.frame(cv = markers_cv)) +
   geom_histogram(aes(x = cv)) +
   geom_vline(xintercept = cv_threshold, color = "firebrick") #+ coord_cartesian(ylim = c(0,100))
@@ -77,14 +163,17 @@ rm(markers_cv, cv_threshold, high_cv_markers, n_markers_removed)
 marker_order <- intersect(rownames(marker_info), rownames(marker_effects))
 marker_info <- marker_info[marker_order, ]
 marker_effects <- marker_effects[marker_order, ]
-# all(rownames(marker_info) == rownames(marker_effects))
+if (!all(rownames(marker_info) == rownames(marker_effects))) stop("marker names don't match")
 
 # make samples as rows and markers as columns
 marker_effects <- data.frame(t(marker_effects))
 marker_info <- data.frame(t(marker_info))
 
 
-# check for genes and samples with too many missing values
+
+#### qc ----
+
+# check for markers and samples with too many missing values
 gsg <- goodSamplesGenes(marker_effects, verbose = 3)
 # if 'gsg$allOK' returns TRUE, all genes have passed the cuts
 # if not, we remove the offending genes and samples from the data:
@@ -103,7 +192,7 @@ marker_info <- marker_info[, marker_order]
 marker_effects <- marker_effects[, marker_order]
 
 # cluster the samples (in contrast to clustering genes that will come later) to see if there
-# are any obvious outliers.
+# are any obvious outliers
 sample_tree <- hclust(dist(marker_effects), method = "average")
 sizeGrWindow(12,9)
 pdf(file = paste0(output_folder, "/sample_clustering.pdf"), width = 12, height = 9)
@@ -112,25 +201,17 @@ par(mar = c(0,4,2,0))
 plot(sample_tree, main = "Sample clustering to detect outliers", sub="", xlab="", cex.lab = 1.5,
      cex.axis = 1.5, cex.main = 2)
 dev.off()
-# don't seem to have a sample much different than all the others
 # remove unnecessary variables
 rm(gsg, sample_tree, marker_order)
-
-# # write files
-# marker_effects_filtered <- rownames_to_column(marker_effects)
-# marker_info_filtered <- rownames_to_column(marker_info)
-# fwrite(marker_effects_filtered, "tgca-hnsc_expr.tumor.filtered.txt", sep = "\t", quote = FALSE, na = NA, row.names = FALSE)
-# fwrite(marker_info_filtered, "genes_marker_info.tumor.filtered.txt", sep = "\t", quote = FALSE, na = NA, row.names = FALSE)
-# rm(marker_effects_filtered, marker_info_filtered)
 
 
 
 #### pick soft threshold  ----
 
-# Choose a set of soft-thresholding powers
+# choose a set of soft-thresholding powers
 powers <- c(c(1:10), seq(from = 12, to = 20, by = 2))
 
-# Call the network topology analysis function
+# call the network topology analysis function
 sft <- pickSoftThreshold(marker_effects, powerVector = powers, verbose = 5)
 
 # Plot the results:
@@ -156,147 +237,18 @@ text(sft$fitIndices[, 1], sft$fitIndices[, 5], labels = powers, cex = cex1, col 
 dev.off()
 
 # save data for next step
-save(MEs, moduleLabels, moduleColors, geneTree, file = "wgcna_tumor_network.RData")
+save(marker_effects, marker_info, sft, file = paste0(output_folder, "/pick_soft_threshold.RData"))
 
 
 
+#### debug ----
 
-####################################
-# ADD CODE BELOW TO ANOTHER SCRIPT #
-####################################
-
-
-#### build weighted network ----
-
-# sft$powerEstimate
-# # choose the power 10, which is the lowest power for which the scale-free topology fit index curve
-# # flattens out upon reaching a high value (in this case, ~0.8).
-sft$powerEstimate <- 10
-
-# calculate the adjacencies, using the soft thresholding power 10
-adjacency <- adjacency(marker_effects, power = sft$powerEstimate)
-
-sizeGrWindow(12,9)
-pdf(file = paste0(output_folder, "/scale-free_topology_plot.pdf"), width = 12, height = 9)
-scaleFreePlot(adjacency, nBreaks = 10, truncated = TRUE, removeFirst = FALSE)
-dev.off()
-
-# To minimize effects of noise and spurious associations, we transform the adjacency into
-# Topological Overlap Matrix, and calculate the corresponding dissimilarity:
-
-# Turn adjacency into topological overlap
-TOM <- TOMsimilarity(adjacency)
-dissTOM <- 1 - TOM
-rm(adjacency)
-
-
-# use hierarchical clustering to produce a hierarchical clustering tree (dendrogram) of genes
-
-# Call the hierarchical clustering function
-geneTree = hclust(as.dist(dissTOM), method = "average")
-# Plot the resulting clustering tree (dendrogram)
-sizeGrWindow(12,9)
-pdf(file = paste0(output_folder, "/marker_clustering_TOM-diss.pdf"), width = 12, height = 9)
-plot(geneTree, xlab="", sub="", main = "Marker clustering on TOM-based dissimilarity",
-     labels = FALSE, hang = 0.04)
-dev.off()
-
-# TOMplot(diss = dissTOM, dendro = geneTree)
-
-# save data for next step
-save(MEs, moduleLabels, moduleColors, geneTree, file = "wgcna_tumor_network.RData")
-
-
-
-
-####################################
-# ADD CODE BELOW TO ANOTHER SCRIPT #
-####################################
-
-#### define network modules ----
-
-# In the clustering tree (dendrogram), each leaf, that is a short vertical line, corresponds to a gene.
-# Branches of the dendrogram group together densely interconnected, highly co-expressed genes.
-# Module identification amounts to the identification of individual branches (”cutting the branches off the dendrogram”).
-# There are several methods for branch cutting; our standard method is the Dynamic Tree Cut from the package dynamicTreeCut.
-# The next snippet of code illustrates its use
-
-# We like large modules, so we set the minimum module size relatively high:
-minModuleSize = 50
-# Module identification using dynamic tree cut:
-dynamicMods = cutreeDynamic(dendro = geneTree, distM = dissTOM,
-                            deepSplit = 2, pamRespectsDendro = FALSE,
-                            minClusterSize = minModuleSize)
-table(dynamicMods)
-
-# The function returned 44 modules labeled 1–44 largest to smallest. Label 0 is reserved for unassigned genes.
-# The above command lists the sizes of the modules
-
-# We now plot the module assignment under the gene dendrogram:
-
-# Convert numeric lables into colors
-dynamicColors = labels2colors(dynamicMods)
-table(dynamicColors)
-# Plot the dendrogram and colors underneath
-sizeGrWindow(8,6)
-pdf(file = paste0(output_folder, "/marker_dendrogram.pdf"), width = 12, height = 9)
-plotDendroAndColors(geneTree, dynamicColors, "Dynamic Tree Cut",
-                    dendroLabels = FALSE, hang = 0.03,
-                    addGuide = TRUE, guideHang = 0.05,
-                    main = "Marker dendrogram and module colors")
-dev.off()
-
-# The Dynamic Tree Cut may identify modules whose expression profiles are very similar. It may be
-# prudent to merge such modules since their genes are highly co-expressed. To quantify co-expression
-# similarity of entire modules, we calculate their eigengenes and cluster them on their correlation:
-
-# Calculate eigengenes
-MEList = moduleEigengenes(marker_effects, colors = dynamicColors)
-MEs = MEList$eigengenes
-# Calculate dissimilarity of module eigengenes
-MEDiss = 1 - cor(MEs)
-# Cluster module eigengenes
-METree = hclust(as.dist(MEDiss), method = "average")
-# We choose a height cut of 0.25, corresponding to correlation of 0.75, to merge:
-MEDissThres = 0.25
-
-# Plot the result
-sizeGrWindow(7, 6)
-pdf(file = paste0(output_folder, "/eigenmarkers_clustering.pdf"), width = 7, height = 6)
-plot(METree, main = "Clustering of module eigenmarkers",
-     xlab = "", sub = "")
-# Plot the cut line into the dendrogram
-abline(h=MEDissThres, col = "red")
-dev.off()
-
-
-# Call an automatic merging function
-merge = mergeCloseModules(marker_effects, dynamicColors, cutHeight = MEDissThres, verbose = 3)
-# The merged module colors
-mergedColors = merge$colors;
-# Eigengenes of the new merged modules:
-mergedMEs = merge$newMEs;
-
-
-# To see what the merging did to our module colors, we plot the gene dendrogram again, with the original and merged module colors underneath
-sizeGrWindow(12, 9)
-pdf(file = paste0(output_folder, "/marker_dendrogram_merged.pdf"), width = 12, height = 9)
-plotDendroAndColors(geneTree, cbind(dynamicColors, mergedColors),
-                    c("Dynamic Tree Cut", "Merged dynamic"),
-                    dendroLabels = FALSE, hang = 0.03,
-                    addGuide = TRUE, guideHang = 0.05)
-dev.off()
-
-# In the subsequent analysis, we will use the merged module colors in mergedColors. We save the
-# relevant variables for use in subsequent parts of the tutorial:
-
-# Rename to moduleColors
-moduleColors = mergedColors
-# Construct numerical labels corresponding to the colors
-colorOrder = c("grey", standardColors(50));
-moduleLabels = match(moduleColors, colorOrder)-1;
-MEs = mergedMEs;
-# Save module colors and labels for use in subsequent parts
-save(MEs, moduleLabels, moduleColors, geneTree, file = "wgcna_tumor_network.RData")
-
-# resulted in 37 modules
+# marker_effects_file <- "analysis/marker_effects/YLD/marker_effects.txt"
+# marker_hmp_file <- "data/usda_hybrids_projected-SVs-SNPs.poly.low-missing.pruned-100kb.geno-miss-0.25.hmp.txt"
+# output_folder <- "tests/networks/YLD"
+# # norm_method <- "none"
+# norm_method <- "minmax"
+# # norm_method <- "zscore"
+# cv_threshold <- "Q3"
+# # cv_threshold <- 0.2
+# # debug <- FALSE
