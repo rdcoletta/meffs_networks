@@ -98,7 +98,7 @@ Due to the exploratory nature of this project, we'll test different parameters w
 
 ### Step 1. Choose a coefficient of variation filter
 
-Markers with very low coefficient of variation (CV) across samples are not very informative when building networks and should be removed. The `scripts/plot_cv_meffs.sh` plots the distribution of CV scores for all the markers so I can decide how many markers to remove. The script will also filters out duplicated markers (i.e. only one marker from a group of markers with exact same effects will be kept) to reduce redundancy, reduce total amount of memory required to build the network and also speed up network construction.
+Markers with very low coefficient of variation (CV) across samples are not very informative when building networks and should be removed. The `scripts/plot_cv_meffs.R` plots the distribution of CV scores for all the markers so I can decide how many markers to remove. The script will also filters out duplicated markers (i.e. only one marker from a group of markers with exact same effects will be kept) to reduce redundancy, reduce total amount of memory required to build the network and also speed up network construction.
 
 ```bash
 # trait to build network
@@ -113,3 +113,34 @@ for meff_model in rrblup gwas; do
   done
 done
 ```
+
+#### Step 2. Pick a soft threshold
+
+In order to build networks with WGCNA, I need to specify a power to model the scale-free topology of the network. The `scripts/pick_soft_threshold.R` plots the scale-free topology fit index for different powers so I can decide which one is more adequate for my data.
+
+```bash
+# marker file
+MARKERS=data/usda_hybrids_projected-SVs-SNPs.poly.low-missing.pruned-100kb.geno-miss-0.25.hmp.txt
+# trait to build network
+TRAIT=YLD
+
+# marker effects from rrblup
+for meff_model in rrblup gwas; do
+  # marker effects file
+  MEFF_FILE=analysis/marker_effects/${TRAIT}/marker_effects.${meff_model}.txt
+  # type of normalization method to use
+  for norm_method in minmax zscore none; do
+    # adjust cv threshold to type of normalization
+    [[ ${norm_method} == 'minmax' ]] && CV_THRESHOLD=0.12
+    [[ ${norm_method} == 'zscore' ]] && CV_THRESHOLD=0.75
+    [[ ${norm_method} == 'none' ]] && CV_THRESHOLD=0.75
+    # create output folder
+    OUTFOLDER=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}
+    mkdir -p ${OUTFOLDER}
+    # submit job
+    sbatch --export=MARKERS=${MARKERS},MEFF_FILE=${MEFF_FILE},OUTFOLDER=${OUTFOLDER},NORM_METHOD=${norm_method},CV_THRESHOLD=${CV_THRESHOLD} scripts/pick_soft_threshold.sh
+  done
+done
+```
+
+> Based on preliminary testing, using a more stringent CV cutoff resulted in better scale-free topology fit. Also, Z-score and no normalization yield the same results here and in my preliminary tests, so I'll just run `minmax`- and `zscore`-normalized data.

@@ -13,18 +13,17 @@ description: determine soft-threshold to use when building marker effect network
 usage: Rscript pick_soft_threshold.R [marker_effects_file] [marker_hmp_file] [output_folder] [...]
 
 positional arguments:
-  marker_effects_file         file containing marker effects for a trait (3 columns: environment, marker, effect)
+  marker_effects_file         file containing marker effects for a trait (first column: marker names,
+                              remaining columns: environments)
   marker_hmp_file             hapmap file containing marker data
   output_folder               name of folder to save results
 
 optional argument:
   --help                      show this helpful message
-  --norm-method               method to normalize effects across multiple environments. Available methods are
+  --norm-method=VALUE         method to normalize effects across multiple environments. Available methods are
                               'minmax' (default), 'zscore', 'none' (i.e. no normalization)
-  --cv-threshold              markers with coefficient of variation (CV) below this threshold will be removed.
-                              If number is provided, then an absolute cut-off will be applied. Alternatively,
-                              you can choose between 'Q1', 'Q2' or 'Q3' (default) to remove markers with CV below
-                              the first, second or third quantiles.
+  --cv-threshold=VALUE        markers with coefficient of variation (CV) below this threshold will be removed
+                              (default: 0.1)
   --debug                     add this option to randomly select 10,000 markers and speed up computation time
 
 
@@ -56,7 +55,7 @@ if (!dir.exists(output_folder)) dir.create(output_folder, recursive = TRUE)
 
 # set default of optional args
 norm_method <- "minmax"
-cv_threshold <- "Q3"
+cv_threshold <- "0.1"
 debug <- FALSE
 
 # assert to have the correct optional arguments
@@ -89,9 +88,7 @@ if (!norm_method %in% c("minmax", "zscore", "none") ) {
 if (suppressWarnings(!is.na(as.numeric(cv_threshold)))) {
   cv_threshold <- as.numeric(cv_threshold)
 } else {
-  if (!cv_threshold %in% c("Q1", "Q2", "Q3")) {
-    stop("Optional argument '--cv-threshold' should be a number or one of these quantiles: 'Q1', 'Q2' or 'Q3'")
-  } 
+  stop("Optional argument '--cv-threshold' should be a number")
 }
 
 
@@ -100,9 +97,10 @@ if (suppressWarnings(!is.na(as.numeric(cv_threshold)))) {
 
 # load marker effects
 marker_effects <- fread(marker_effects_file, header = TRUE, data.table = FALSE)
-marker_effects <- pivot_wider(marker_effects, names_from = "env", values_from = "effect")
+# marker_effects <- pivot_wider(marker_effects, names_from = "env", values_from = "effect")
 colnames(marker_effects) <- gsub(".", "-", colnames(marker_effects), fixed = TRUE)
 
+# remove markers that have the exact same marker effects
 # load marker info
 marker_info <- fread(marker_hmp_file, header = TRUE, data.table = FALSE)
 marker_info <- marker_info[, 1:4]
@@ -110,6 +108,9 @@ marker_info <- marker_info[, 1:4]
 # transform to rownames
 marker_effects <- column_to_rownames(marker_effects, "marker")
 marker_info <- column_to_rownames(marker_info, "rs#")
+
+# remove markers with exact same effects across envs
+marker_effects <- marker_effects[!duplicated(marker_effects), ]
 
 if (debug) {
   # randomly sample markers for testing
@@ -136,19 +137,16 @@ if (norm_method == "zscore") {
   rm(mean, sd)
 }
 
+# using zscore normalization (or no normalization) can have negative marker effect values,
+# which will end up inflating the coefficient of variation. Thus, I'm shiffiting the scale
+# of each marker based on the most negative value
+if (norm_method == "zscore" | norm_method == "none") {
+  marker_effects <- apply(marker_effects,  MARGIN = 1, function(marker) marker - min(marker))
+  marker_effects <- data.frame(t(marker_effects), stringsAsFactors = FALSE)
+}
+
 # calculate coefficient of variation
 markers_cv <- apply(marker_effects,  MARGIN = 1, function(marker) abs(sd(marker) / mean(marker)))
-# set CV treshold if a quantile (and not absolute) value was provided
-if (cv_threshold %in% c("Q1", "Q2", "Q3")) {
-  cv_threshold <- as.numeric(gsub("Q", "", cv_threshold))
-  cv_threshold <- as.numeric(quantile(markers_cv)[cv_threshold + 1])
-}
-# plot cv distribution
-plot_cv_cutoff <- ggplot(data.frame(cv = markers_cv)) +
-  geom_histogram(aes(x = cv)) +
-  geom_vline(xintercept = cv_threshold, color = "firebrick") #+ coord_cartesian(ylim = c(0,100))
-ggsave(filename = paste0(output_folder, "/cv_cutoff.pdf"), plot = plot_cv_cutoff,
-       device = "pdf", height = 10, width = 8)
 
 # get markers that pass CV threshold
 high_cv_markers <- names(which(markers_cv >= as.numeric(cv_threshold)))
@@ -194,7 +192,6 @@ marker_effects <- marker_effects[, marker_order]
 # cluster the samples (in contrast to clustering genes that will come later) to see if there
 # are any obvious outliers
 sample_tree <- hclust(dist(marker_effects), method = "average")
-sizeGrWindow(12,9)
 pdf(file = paste0(output_folder, "/sample_clustering.pdf"), width = 12, height = 9)
 par(cex = 0.6)
 par(mar = c(0,4,2,0))
@@ -209,14 +206,13 @@ rm(gsg, sample_tree, marker_order)
 #### pick soft threshold  ----
 
 # choose a set of soft-thresholding powers
-powers <- c(c(1:10), seq(from = 12, to = 20, by = 2))
+powers <- c(c(1:10), seq(from = 12, to = 30, by = 2))
 
 # call the network topology analysis function
 sft <- pickSoftThreshold(marker_effects, powerVector = powers, verbose = 5)
 
-# Plot the results:
-sizeGrWindow(9, 5)
-pdf(file = paste0(output_folder, "/scale-free_topology_fit_index.pdf"), width = 9, height = 6)
+# Plot the results
+pdf(file = paste0(output_folder, "/scale-free_topology_fit_index.pdf"), width = 9, height = 5)
 par(mfrow = c(1, 2))
 cex1 <- 0.9
 # Scale-free topology fit index as a function of the soft-thresholding power
@@ -243,12 +239,12 @@ save(marker_effects, marker_info, sft, file = paste0(output_folder, "/pick_soft_
 
 #### debug ----
 
-# marker_effects_file <- "analysis/marker_effects/YLD/marker_effects.txt"
+# marker_effects_file <- "analysis/marker_effects/YLD/marker_effects.rrblup.txt"
+# # marker_effects_file <- "analysis/marker_effects/YLD/marker_effects.rrblup.no-missing-genos.txt"
 # marker_hmp_file <- "data/usda_hybrids_projected-SVs-SNPs.poly.low-missing.pruned-100kb.geno-miss-0.25.hmp.txt"
 # output_folder <- "tests/networks/YLD"
 # # norm_method <- "none"
 # norm_method <- "minmax"
 # # norm_method <- "zscore"
-# cv_threshold <- "Q3"
-# # cv_threshold <- 0.2
-# # debug <- FALSE
+# cv_threshold <- 0.2
+# debug <- FALSE
