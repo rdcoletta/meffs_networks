@@ -18,7 +18,7 @@ positional arguments:
 
 optional argument:
   --help                      show this helpful message
-  --soft-threshold            the lowest power for which the scale-free topology fit index curve (default: 10)
+  --soft-threshold=VALUE      the lowest power for which the scale-free topology fit index curve (default: 10)
 
 
 "
@@ -51,7 +51,7 @@ soft_threshold <- "10"
 
 # assert to have the correct optional arguments
 pos_args <- 2
-if (length(args) != pos_args) stop(usage(), "missing positional argument(s)")
+if (length(args) < pos_args) stop(usage(), "missing positional argument(s)")
 
 if (length(args) > pos_args) {
   
@@ -89,8 +89,9 @@ load(sft_Rdata)
 adjacency <- adjacency(marker_effects, power = soft_threshold)
 
 # plot scale free topology
-sizeGrWindow(12,9)
 pdf(file = paste0(output_folder, "/scale-free_topology_plot.pdf"), width = 12, height = 9)
+par(mfrow = c(1, 2))
+hist(rowSums(adjacency), main = paste0("Connectivity distribution\n(power = ", soft_threshold, ")"), xlab = "Connectivity")
 scaleFreePlot(adjacency, nBreaks = 10, truncated = TRUE, removeFirst = FALSE)
 dev.off()
 
@@ -99,25 +100,19 @@ dev.off()
 
 # trn adjacency into topological overlap
 TOM <- TOMsimilarity(adjacency)
+rm(adjacency)
 dissTOM <- 1 - TOM
-rm(adjacency, TOM)
+rm(TOM)
 
 # use hierarchical clustering to produce a hierarchical clustering tree (dendrogram) of genes
 
 # call the hierarchical clustering function
 geneTree = hclust(as.dist(dissTOM), method = "average")
 # plot the resulting clustering tree (dendrogram)
-sizeGrWindow(12,9)
 pdf(file = paste0(output_folder, "/marker_clustering_TOM-diss.pdf"), width = 12, height = 9)
 plot(geneTree, xlab="", sub="", main = "Marker clustering on TOM-based dissimilarity",
      labels = FALSE, hang = 0.04)
 dev.off()
-
-# # plot TOM
-# sizeGrWindow(12,9)
-# pdf(file = paste0(output_folder, "/TOM-diss_plot.pdf"), width = 12, height = 9)
-# TOMplot(diss = dissTOM, dendro = geneTree)
-# dev.off()
 
 # save data for next step
 save(marker_effects, marker_info, geneTree, dissTOM, file = paste0(output_folder, "/build_meff_network.RData"))

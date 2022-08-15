@@ -114,6 +114,7 @@ for meff_model in rrblup gwas; do
 done
 ```
 
+
 #### Step 2. Pick a soft threshold
 
 In order to build networks with WGCNA, I need to specify a power to model the scale-free topology of the network. The `scripts/pick_soft_threshold.R` plots the scale-free topology fit index for different powers so I can decide which one is more adequate for my data.
@@ -144,3 +145,30 @@ done
 ```
 
 > Based on preliminary testing, using a more stringent CV cutoff resulted in better scale-free topology fit. Also, Z-score and no normalization yield the same results here and in my preliminary tests, so I'll just run `minmax`- and `zscore`-normalized data.
+
+
+
+#### Step 3. Build the network
+
+Depending on how the marker effects were calculated, I will need to use different powers as the soft threshold for WGCNA (`20` for rrblup model and `24` for gwas model). Despite being different, both of them are much higher powers that what's tipically used in gene co-expression networks, suggesting that building marker effects networks will require tuning additional parameters downstream the pipeline. The `scripts/build_meff_network.R` builds the network for a given soft threshold.
+
+```bash
+# trait to build network
+TRAIT=YLD
+
+# marker effects from rrblup
+for meff_model in rrblup gwas; do
+  # type of normalization method to use
+  for norm_method in minmax zscore; do
+    # folder with results
+    FOLDER=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}
+    # file with saved R variables from step 2
+    RDATA=${FOLDER}/pick_soft_threshold.RData
+    # lowest power for which the scale-free topology fit index curve
+    [[ ${meff_model} == 'rrblup' ]] && SFT=20
+    [[ ${meff_model} == 'gwas' ]] && SFT=24
+    # submit job
+    sbatch --export=RDATA=${RDATA},OUTFOLDER=${FOLDER},SFT=${SFT} scripts/build_meff_network.sh
+  done
+done
+```
