@@ -13,14 +13,19 @@ description: build marker effect networks.
 usage: Rscript define_network_modules.R [meff_net_Rdata] [output_folder] [...]
 
 positional arguments:
-  meff_net_Rdata              .RData file containing R variables from build_meff_network.R script
-  output_folder               name of folder to save results
+  meff_net_Rdata                .RData file containing R variables from build_meff_network.R script
+  output_folder                 name of folder to save results
 
 optional argument:
-  --help                      show this helpful message
-  --min-mod-size              minimum number of markers to be in a module (default: 50)
-  --ME-diss-threshold         threshold to merge similar modules based on their eigengenes
-                              (default: 0.25, i.e. correlation of 0.75)
+  --help                        show this helpful message
+  --min-mod-size=[VALUE]        minimum number of markers to be in a module (default: 50)
+  --ME-diss-threshold=[VALUE]   threshold to merge similar modules based on their eigengenes
+                                (default: 0.25, i.e. correlation of 0.75)
+  --soft-threshold=[VALUE]      the lowest power for which the scale-free topology fit index curve.
+                                Necessary just for making the TOM plot (default: 10)
+  --pamStage                    add this option to perform PAM stage of cutreeDynamic() function.
+                                Turning this on will assign some markers to modules that were
+                                previously unassigned.
 
 
 "
@@ -50,16 +55,18 @@ if (!dir.exists(output_folder)) dir.create(output_folder, recursive = TRUE)
 
 # set default of optional args
 min_mod_size <- "50"
-ME_diss_threshold <- 0.25
+ME_diss_threshold <- "0.25"
+soft_threshold <- "10"
+pamStage <- FALSE
 
 # assert to have the correct optional arguments
 pos_args <- 2
-if (length(args) != pos_args) stop(usage(), "missing positional argument(s)")
+if (length(args) < pos_args) stop(usage(), "missing positional argument(s)")
 
 if (length(args) > pos_args) {
   
   opt_args <- args[-1:-pos_args]
-  opt_args_allowed <- c("--min-mod-size", "--ME-diss-threshold")
+  opt_args_allowed <- c("--min-mod-size", "--ME-diss-threshold", "--soft-threshold", "--pamStage")
   opt_args_requested <- as.character(sapply(opt_args, function(x) unlist(strsplit(x, split = "="))[1]))
   if (any(!opt_args_requested %in% opt_args_allowed)) stop(usage(), "wrong optional argument(s)")
   
@@ -89,6 +96,12 @@ if (suppressWarnings(!is.na(as.numeric(ME_diss_threshold)))) {
   }
 }
 
+if (suppressWarnings(!is.na(as.integer(soft_threshold)))) {
+  soft_threshold <- as.integer(soft_threshold)
+} else {
+  stop("Optional argument '--soft-threshold' should be an integer")
+}
+
 
 
 #### define network modules ----
@@ -101,10 +114,13 @@ load(meff_net_Rdata)
 # module identification amounts to the identification of individual branches (”cutting the branches off the dendrogram”).
 # there are several methods for branch cutting - WGCNA standard method is the Dynamic Tree Cut from the package dynamicTreeCut.
 
+cat("identifying modules...\n")
+
 # module identification using dynamic tree cut
 # the function returns modules labeled from the largest to smallest (label 0 is reserved for unassigned genes)
 dynamicMods <- cutreeDynamic(dendro = geneTree, distM = dissTOM,
-                             deepSplit = 2, pamRespectsDendro = FALSE,
+                             deepSplit = 2, pamStage = pamStage,
+                             pamRespectsDendro = FALSE,
                              minClusterSize = min_mod_size)
 
 # # lists the sizes of the modules
@@ -115,7 +131,6 @@ dynamicColors <- labels2colors(dynamicMods)
 # table(dynamicColors)
 
 # plot the module assignment under the gene dendrogram
-sizeGrWindow(8,6)
 pdf(file = paste0(output_folder, "/marker_dendrogram.pdf"), width = 12, height = 9)
 plotDendroAndColors(geneTree, dynamicColors, "Dynamic Tree Cut",
                     dendroLabels = FALSE, hang = 0.03,
@@ -136,13 +151,14 @@ MEDiss <- 1 - cor(MEs)
 METree <- hclust(as.dist(MEDiss), method = "average")
 
 # plot the result
-sizeGrWindow(7, 6)
 pdf(file = paste0(output_folder, "/eigengenes_clustering.pdf"), width = 7, height = 6)
 plot(METree, main = "Clustering of module eigengenes",
      xlab = "", sub = "")
 # plot the cut line into the dendrogram
 abline(h = ME_diss_threshold, col = "red")
 dev.off()
+
+cat("merging similar modules...\n")
 
 # call an automatic merging function
 merge <- mergeCloseModules(marker_effects, dynamicColors, cutHeight = ME_diss_threshold, verbose = 3)
@@ -153,7 +169,6 @@ mergedMEs <- merge$newMEs
 
 # to see what the merging did to our module colors, we plot the gene dendrogram again,
 # with the original and merged module colors underneath
-sizeGrWindow(12, 9)
 pdf(file = paste0(output_folder, "/marker_dendrogram_merged.pdf"), width = 12, height = 9)
 plotDendroAndColors(geneTree, cbind(dynamicColors, mergedColors),
                     c("Dynamic Tree Cut", "Merged dynamic"),
@@ -171,7 +186,41 @@ moduleLabels <- match(moduleColors, colorOrder)
 MEs <- mergedMEs
 
 # save module colors and labels for use in subsequent parts
-save(MEs, moduleLabels, moduleColors, geneTree, file = paste0(outfolder, "/define_network_modules.RData"))
+save(marker_effects, marker_info, MEs, moduleLabels, moduleColors, geneTree,
+     file = paste0(output_folder, "/define_network_modules.RData"))
+
+
+
+#### qc network ----
+
+cat("making MDS plot...\n")
+
+# MDS plot
+mds <- cmdscale(as.dist(dissTOM), 2)
+pdf(file = paste0(output_folder, "/MDS_plot.pdf"), width = 7, height = 6)
+plot(mds, col = as.character(moduleColors), main = "MDS plot",
+     xlab = "Scaling Dimension 1", ylab = "Scaling Dimension 2")
+dev.off()
+rm(dissTOM)
+
+cat("making TOM plot...\n")
+
+# TOM plot
+# remove markers from grey modules to speed up plot construction
+moduleColorsFilter <- (moduleColors != "grey")
+# calculate dissTOM again
+dissTOMfilter  <- 1 - TOMsimilarityFromExpr(marker_effects[, moduleColorsFilter], power = soft_threshold)
+# redo hierarchical clustering 
+hierFilter <- hclust(as.dist(dissTOMfilter), method = "average" )
+# set up diagonals to NA
+diag(dissTOMfilter) <- NA
+# plot
+bitmap(file = paste0(output_folder, "/TOM-diss_plot.png"), type = "png16m", res = 300)
+TOMplot(dissTOMfilter ^ 4, hierFilter, as.character(moduleColors[moduleColorsFilter]),
+        main = "TOM heatmap plot, module genes" )
+dev.off()
+
+cat("...done!\n")
 
 
 
@@ -181,3 +230,5 @@ save(MEs, moduleLabels, moduleColors, geneTree, file = paste0(outfolder, "/defin
 # output_folder <- "tests/networks/YLD"
 # min_mod_size <- 50
 # ME_diss_threshold <- 0.25
+# soft_threshold <- 12
+# pamStage <- FALSE

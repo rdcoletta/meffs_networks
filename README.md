@@ -172,3 +172,40 @@ for meff_model in rrblup gwas; do
   done
 done
 ```
+
+
+#### Step 4. Define network modules
+
+Once networks are built, I need to define the modules (or clusters) based by cutting the dendrogram at a certain height. The `cutreeDynamic()` function of WGCNA implemented in `scripts/define_network_modules.R` There are two main arguments in this function that can have a big impact on how modules are identified: `DeepSplit` (higher number results in more smaller clusters) and `pamStage` (if `FALSE` there will be more markers not assigned to any module - they will be part of the grey module). The first one may be harder to tune so I'll use WGCNA's default, but I will test how turning `pamStage` on or off affects module definition. Additionally, I need to determine what is the minimum number of markers to use in each module and how that affects the quality of the network.
+
+```bash
+# trait to build network
+TRAIT=YLD
+
+# marker effects from rrblup
+for meff_model in rrblup gwas; do
+  # type of normalization method to use
+  for norm_method in minmax zscore; do
+    # folder with results
+    FOLDER=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}
+    # file with saved R variables from step 2
+    RDATA=${FOLDER}/build_meff_network.RData
+    # lowest power for which the scale-free topology fit index curve
+    [[ ${meff_model} == 'rrblup' ]] && SFT=20
+    [[ ${meff_model} == 'gwas' ]] && SFT=24
+    # minimum number of markers per module
+    for minsize in 25 50 100; do
+      # define modules with and without the PAM stage
+      for pam in on off; do
+        # threshold to merge similar modules based on their eigengenes
+        MEDISS=0.25
+        # create new output folder
+        OUTFOLDER=${FOLDER}/min_mod_size_${minsize}/pamStage_${pam}
+        mkdir -p ${OUTFOLDER}
+        # submit job
+        sbatch --export=RDATA=${RDATA},OUTFOLDER=${OUTFOLDER},MINSIZE=${minsize},MEDISS=${MEDISS},SFT=${SFT},PAM=${pam} scripts/define_network_modules.sh
+      done
+    done
+  done
+done
+```
