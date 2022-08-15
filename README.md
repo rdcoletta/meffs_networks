@@ -85,3 +85,31 @@ Rscript scripts/plot_marker_effects.R analysis/marker_effects \
                                       --models=rrblup,bayescpi,mrr,gwas \
                                       --no-missing-genotypes
 ```
+
+> BayesCpi model didn't perform as well as the other models. It will be interesting to see the networks that come out of the marker effects from this model. It may be a control for a "bad" input to build networks.
+
+
+
+
+## Build networks
+
+Due to the exploratory nature of this project, we'll test different parameters when building networks with [WGCNA](https://horvath.genetics.ucla.edu/html/CoexpressionNetwork/Rpackages/WGCNA/index.html). This R package was developed and optimized to build co-expression networks of genes. While networks can be built with a different type of data, it is still unknown if marker effects networks would behave similarly to co-expression networks (i.e. have a scale-free topology). Another concern is how to transform/normalize the marker effect data (if needed in the first place), since the distribution of marker effects are not skewed as gene expression data.
+
+
+### Step 1. Choose a coefficient of variation filter
+
+Markers with very low coefficient of variation (CV) across samples are not very informative when building networks and should be removed. The `scripts/plot_cv_meffs.sh` plots the distribution of CV scores for all the markers so I can decide how many markers to remove. The script will also filters out duplicated markers (i.e. only one marker from a group of markers with exact same effects will be kept) to reduce redundancy, reduce total amount of memory required to build the network and also speed up network construction.
+
+```bash
+# trait to build network
+TRAIT=YLD
+# model used to calculate marker effects
+for meff_model in rrblup gwas; do
+  # marker effects file
+  MEFF_FILE=analysis/marker_effects/${TRAIT}/marker_effects.${meff_model}.txt
+  # type of normalization method to use
+  for norm_method in minmax zscore none; do
+    sbatch --export=TRAIT=${TRAIT},MEFF_FILE=${MEFF_FILE},MEFF_MODEL=${meff_model},NORM_METHOD=${norm_method} scripts/plot_cv_meffs.sh
+  done
+done
+```
