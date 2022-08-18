@@ -115,7 +115,7 @@ done
 ```
 
 
-#### Step 2. Pick a soft threshold
+### Step 2. Pick a soft threshold
 
 In order to build networks with WGCNA, I need to specify a power to model the scale-free topology of the network. The `scripts/pick_soft_threshold.R` plots the scale-free topology fit index for different powers so I can decide which one is more adequate for my data.
 
@@ -148,7 +148,7 @@ done
 
 
 
-#### Step 3. Build the network
+### Step 3. Build the network
 
 Depending on how the marker effects were calculated, I will need to use different powers as the soft threshold for WGCNA (`20` for rrblup model and `24` for gwas model). Despite being different, both of them are much higher powers that what's tipically used in gene co-expression networks, suggesting that building marker effects networks will require tuning additional parameters downstream the pipeline. The `scripts/build_meff_network.R` builds the network for a given soft threshold.
 
@@ -174,9 +174,9 @@ done
 ```
 
 
-#### Step 4. Define network modules
+### Step 4. Define network modules
 
-Once networks are built, I need to define the modules (or clusters) based by cutting the dendrogram at a certain height. The `cutreeDynamic()` function of WGCNA implemented in `scripts/define_network_modules.R` There are two main arguments in this function that can have a big impact on how modules are identified: `DeepSplit` (higher number results in more smaller clusters) and `pamStage` (if `FALSE` there will be more markers not assigned to any module - they will be part of the grey module). The first one may be harder to tune so I'll use WGCNA's default, but I will test how turning `pamStage` on or off affects module definition. Additionally, I need to determine what is the minimum number of markers to use in each module and how that affects the quality of the network.
+Once networks are built, I need to define the modules (or clusters) based by cutting the dendrogram at a certain height. The `cutreeDynamic()` function of WGCNA implemented in `scripts/define_network_modules.R` There are two main arguments in this function that can have a big impact on how modules are identified: `DeepSplit` (higher number results in more smaller clusters) and `pamStage` (if `FALSE` there will be more markers not assigned to any module - they will be part of the grey module). The first one may be harder to tune so I'll use WGCNA's default, but I will test how turning `pamStage = TRUE` and `pamStage = FALSE` affects module definition. Additionally, I need to determine what is the minimum number of markers to use in each module and how that affects the quality of the network.
 
 ```bash
 # trait to build network
@@ -209,3 +209,40 @@ for meff_model in rrblup gwas; do
   done
 done
 ```
+
+> MDS plots from GWAS effects networks seem to be separating clusters much better than those from rrblup effects networks. Also, modules from the two networks (`pamStage` on and off) of `analysis/networks/YLD/meff_gwas/norm_zscore/min_mod_size_100` couldn't be defined. Actually only one module was identified, which is not useful.
+
+
+
+### Step 5. QC network modules
+
+```bash
+# trait to build network
+TRAIT=YLD
+
+# marker effects from rrblup
+for meff_model in rrblup gwas; do
+  # type of normalization method to use
+  for norm_method in minmax zscore; do
+    # minimum number of markers per module
+    for minsize in 25 50 100; do
+      # define modules with and without the PAM stage
+      for pam in on off; do
+        # folder with results
+        FOLDER=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}/min_mod_size_${minsize}/pamStage_${pam}
+        # file with saved R variables from step 2
+        RDATA=${FOLDER}/define_network_modules.RData
+        # lowest power for which the scale-free topology fit index curve
+        [[ ${meff_model} == 'rrblup' ]] && SFT=20
+        [[ ${meff_model} == 'gwas' ]] && SFT=24
+        # number of most important markers to print for each module
+        NHUBS=10
+        # submit job
+        sbatch --export=RDATA=${RDATA},OUTFOLDER=${FOLDER},SFT=${SFT},NHUBS=${NHUBS} scripts/qc_network_modules.sh
+      done
+    done
+  done
+done
+```
+
+> In general, kDiff plots from GWAS effects networks seem to be have better quality modules (i.e. markers with more connections within their own module than with other modules) than those from rrblup effects networks. Turning off the `pamStage` when assigning modules also seem to result in slightly better kDiff, cluster coefficient (i.e. tendency to associate with only a select group) and TOM plots than when this option is on (more visible when GWAS effects were used).
