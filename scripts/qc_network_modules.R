@@ -207,6 +207,24 @@ for (strength_type in c("adjacency", "TOM")) {
   fwrite(hub_markers, file = paste0(output_folder, "/hub_markers_per_module.", strength_type, ".txt"),
          quote = FALSE, sep = "\t", na = NA, row.names = FALSE)
   
+  # plot results
+  stats_mod <- pivot_longer(stats_mod, -module, names_to = "metric", values_to = "value")
+  stats_mod$module <- factor(stats_mod$module)
+  plot_stats_mod <- ggplot(stats_mod, aes(x = module, y = value, fill = module)) +
+    facet_wrap(~ metric, scales = "free_y") +
+    geom_col(color = "black", show.legend = FALSE) +
+    scale_fill_manual(values = levels(stats_mod$module)) +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+    labs(title = "Summary of network metrics",
+         subtitle = paste0("(degree_centralization: ", round(stats_net$degree_centralization, 2), " / ",
+                           "density: ", round(stats_net$density, 2), " / ",
+                           "heterogeneity: ", round(stats_net$heterogeneity, 2), " / ",
+                           "mean_k: ", round(stats_net$mean_k, 2), ")"))
+  
+  ggsave(filename = paste0(output_folder, "/summary_stats.", strength_type, ".pdf"),
+         plot = plot_stats_mod, device = "pdf", width = 12, height = 8)
+  
 }
 
 
