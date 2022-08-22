@@ -432,3 +432,38 @@ done
 ```
 
 > There's more overlap of markers between different marker effect type (~40-60%) than between normalization methods (~20-40%), but there's still a lot of modules that are split between marker effect types (i.e. not a 1:1 ratio).
+
+
+
+
+## Relate modules to phenotypic and environmental data
+
+To validate whether the modules I found have any biological meaning, we need to test if there are any modules that are stastically associated with the trait of interest. The `scripts/relate_modules_to_pheno.sh` does just that and outputs the p-values of correlation tests (corrected for multiple testing) and of permutations.
+
+```bash
+# trait to build network
+TRAIT=YLD
+# phenotypic data to correlate to modules
+TRAIT_FILE=data/1stStage_BLUEs.YLD-per-env.txt
+
+# marker effects from rrblup
+for meff_model in rrblup gwas; do
+  # type of normalization method to use
+  for norm_method in minmax zscore; do
+    # minimum number of markers per module
+    for minsize in 25 50 100; do
+      # define modules with and without the PAM stage
+      for pam in on off; do
+        # folder with results
+        FOLDER=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}/min_mod_size_${minsize}/pamStage_${pam}
+        # file with saved R variables from step 2
+        RDATA=${FOLDER}/define_network_modules.RData
+        # submit job
+        sbatch --export=RDATA=${RDATA},TRAIT_FILE=${TRAIT_FILE},OUTFOLDER=${FOLDER} scripts/relate_modules_to_pheno.sh
+      done
+    done
+  done
+done
+```
+
+> Overall, correlation tests were more stringent than permutations (meaning there were more modules significantly associated with trait when doing permutations).
