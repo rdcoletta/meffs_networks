@@ -467,3 +467,37 @@ done
 ```
 
 > Overall, correlation tests were more stringent than permutations (meaning there were more modules significantly associated with trait when doing permutations).
+
+
+### Calculate LD for markers within each module
+
+Another important thing to check how many markers in a module are in LD with each other. If all of them are in perfect LD, then the marker effect networks would be just picking up LD without any other biological reason for grouping those markers. The `scripts/ld_markers_modules.sh` calculates LD all markers within a module (even if they are in different chromosomes).
+
+```bash
+# trait to build network
+TRAIT=YLD
+# genotypic data of markers
+MARKERS=data/usda_hybrids_projected-SVs-SNPs.poly.low-missing.pruned-100kb.geno-miss-0.25.hmp.txt
+
+# marker effects from rrblup
+for meff_model in rrblup gwas; do
+  # type of normalization method to use
+  for norm_method in minmax zscore; do
+    # minimum number of markers per module
+    for minsize in 25 50 100; do
+      # define modules with and without the PAM stage
+      for pam in on off; do
+        # folder with results
+        FOLDER=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}/min_mod_size_${minsize}/pamStage_${pam}
+        # create folder to keep list of markers per module
+        MODFOLDER=${FOLDER}/modules_ld
+        mkdir -p ${MODFOLDER}
+        # get module summary
+        MODSUMMARY=${FOLDER}/kDiff_per_module.txt
+        # submit job
+        sbatch --export=MODSUMMARY=${MODSUMMARY},MODFOLDER=${MODFOLDER},MARKERS=${MARKERS} scripts/ld_markers_modules.sh
+      done
+    done
+  done
+done
+```
