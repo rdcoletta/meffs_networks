@@ -501,3 +501,47 @@ for meff_model in rrblup gwas; do
   done
 done
 ```
+
+
+### Check in which modules GWAS hits for trait are located
+
+Finally, we can test whether or not modules associated with a trait are also enriched for GWAS hits. If that's the case, then it would be another evidence that the modules identified in the networks have biological meaning and could potentially be used to identify markers associated with trait variability across environments. The `scripts/check_gwas-hits_meff-modules.sh` check if GWAS hits are present in significant marker effect modules, perform enrichment tests for GWAS hits, and plot both the connections of each marker within a module (highlighting the GWAS hits and hub markers or which markers are in LD with each other). For plotting, only connections of markers with adjacency values above 0.1 will be shown (adjacency values vary between 0 and 1).
+
+```bash
+# trait to build network
+TRAIT=YLD
+# gwas hits
+GWAS=~/projects/genomic_prediction/hybrids/analysis/gwas/summary_gwas.txt
+
+# marker effects from rrblup
+for meff_model in rrblup gwas; do
+  # type of normalization method to use
+  for norm_method in minmax zscore; do
+    # minimum number of markers per module
+    for minsize in 25 50 100; do
+      # define modules with and without the PAM stage
+      for pam in on off; do
+        # marker effects file
+        MEFF_FILE=analysis/marker_effects/${TRAIT}/marker_effects.${meff_model}.txt
+        # lowest power for which the scale-free topology fit index curve
+        [[ ${meff_model} == 'rrblup' ]] && SFT=20
+        [[ ${meff_model} == 'gwas' ]] && SFT=24
+        # folder with results
+        FOLDER=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}/min_mod_size_${minsize}/pamStage_${pam}
+        # folder with ld per module
+        MODFOLDER=${FOLDER}/modules_ld
+        # get module summary
+        MODSUMMARY=${FOLDER}/kDiff_per_module.txt
+        # get p-values module-trait association
+        MODPVALS=${FOLDER}/module-pheno_pvals.txt
+        # adjacency threshold for including edges in the network plots
+        EDGE=0.1
+        if [[ -e ${MODSUMMARY} ]]; then
+          # submit job
+          sbatch --export=GWAS=${GWAS},MEFF_FILE=${MEFF_FILE},MODSUMMARY=${MODSUMMARY},MODPVALS=${MODPVALS},MODFOLDER=${MODFOLDER},OUTFOLDER=${FOLDER},SFT=${SFT},EDGE=${EDGE} scripts/check_gwas-hits_meff-modules.sh
+        fi
+      done
+    done
+  done
+done
+```
