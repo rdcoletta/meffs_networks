@@ -216,6 +216,8 @@ done
 
 ### Step 5. QC network modules
 
+We checked how "noisy" the modules defined in the previous step were by looking at the distributions of `kDiff` (i.e. number of connections of a marker with other makers in the module - number of connections of same marker with markers outside its module) and the `clustering coefficient` (i.e. tendency of a marker to associate with its own module). We also calculated some network quality metrics for each module (mean connectivity, density, degree centralization, and heterogeneity).
+
 ```bash
 # trait to build network
 TRAIT=YLD
@@ -246,3 +248,187 @@ done
 ```
 
 > In general, kDiff plots from GWAS effects networks seem to be have better quality modules (i.e. markers with more connections within their own module than with other modules) than those from rrblup effects networks. Turning off the `pamStage` when assigning modules also seem to result in slightly better kDiff, cluster coefficient (i.e. tendency to associate with only a select group) and TOM plots than when this option is on (more visible when GWAS effects were used).
+
+In addition, I wrote `scripts/compare_two_networks.R` to check which modules in one network corresponds to another module in a different network. This will help us understand how different parameters chosen during network construction affects the clustering of markers, and also help identify correponding modules when correlating networks with traits.
+
+**PAM stage on vs off**
+
+```bash
+module load R/3.6.0
+
+# trait to build network
+TRAIT=YLD
+# marker effects from rrblup
+for meff_model in rrblup gwas; do
+  # type of normalization method to use
+  for norm_method in minmax zscore; do
+    # minimum number of markers per module
+    for minsize in 25 50 100; do
+      # folder with results
+      FOLDER=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}/min_mod_size_${minsize}
+      echo -e "\n${FOLDER}\n"
+      # output folder
+      OUT=analysis/networks/${TRAIT}/network_comparisons/pamStage_on-vs-off/meff_${meff_model}/norm_${norm_method}/min_mod_size_${minsize}
+      mkdir -p ${OUT}
+      # compare networks
+      Rscript scripts/compare_two_networks.R \
+              ${FOLDER}/pamStage_off/define_network_modules.RData \
+              ${FOLDER}/pamStage_on/define_network_modules.RData \
+              ${FOLDER}/pamStage_off/module_membership.txt \
+              ${FOLDER}/pamStage_on/module_membership.txt \
+              ${FOLDER}/pamStage_off/kDiff_per_module.txt \
+              ${FOLDER}/pamStage_on/kDiff_per_module.txt \
+              ${OUT} \
+              --name-net1="pamStage_FALSE" \
+              --name-net2="pamStage_TRUE" 2> /dev/null
+    done
+  done
+done
+```
+
+> As expected, using `pamStage = FALSE` results in more markers assigned to the grey module compared to `pamStage = TRUE`, but the remaining modules have a pretty high module membership correlation between networks. Usually, there's a 1:1 to relationship (i.e. one module in one network can be identified in just one module from another network), but sometimes a module from `pamStage = FALSE` can be found in two or more modules from `pamStage = TRUE` (especially for networks with high total number of modules).
+
+**Minimum number of markers per module**
+
+```bash
+module load R/3.6.0
+
+# trait to build network
+TRAIT=YLD
+# marker effects from rrblup
+for meff_model in rrblup gwas; do
+  # type of normalization method to use
+  for norm_method in minmax zscore; do
+    # define modules with and without the PAM stage
+    for pam in on off; do
+      # folder with results
+      FOLDER25=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}/min_mod_size_25/pamStage_${pam}
+      FOLDER50=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}/min_mod_size_50/pamStage_${pam}
+      FOLDER100=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}/min_mod_size_100/pamStage_${pam}
+      # output folders
+      OUT25v50=analysis/networks/${TRAIT}/network_comparisons/minsize_25-vs-50/meff_${meff_model}/norm_${norm_method}/pamStage_${pam}
+      mkdir -p ${OUT25v50}
+      OUT50v100=analysis/networks/${TRAIT}/network_comparisons/minsize_50-vs-100/meff_${meff_model}/norm_${norm_method}/pamStage_${pam}
+      mkdir -p ${OUT50v100}
+      OUT25v100=analysis/networks/${TRAIT}/network_comparisons/minsize_25-vs-100/meff_${meff_model}/norm_${norm_method}/pamStage_${pam}
+      mkdir -p ${OUT25v100}
+      # compare 25 vs 50
+      echo -e "\n${FOLDER25}\n${FOLDER50}\n"
+      Rscript scripts/compare_two_networks.R \
+              ${FOLDER25}/define_network_modules.RData \
+              ${FOLDER50}/define_network_modules.RData \
+              ${FOLDER25}/module_membership.txt \
+              ${FOLDER50}/module_membership.txt \
+              ${FOLDER25}/kDiff_per_module.txt \
+              ${FOLDER50}/kDiff_per_module.txt \
+              ${OUT25v50} \
+              --name-net1="min_mod_size_25" \
+              --name-net2="min_mod_size_50" 2> /dev/null
+      # compare 50 vs 100
+      echo -e "\n${FOLDER50}\n${FOLDER100}\n"
+      Rscript scripts/compare_two_networks.R \
+              ${FOLDER50}/define_network_modules.RData \
+              ${FOLDER100}/define_network_modules.RData \
+              ${FOLDER50}/module_membership.txt \
+              ${FOLDER100}/module_membership.txt \
+              ${FOLDER50}/kDiff_per_module.txt \
+              ${FOLDER100}/kDiff_per_module.txt \
+              ${OUT50v100} \
+              --name-net1="min_mod_size_50" \
+              --name-net2="min_mod_size_100" 2> /dev/null
+      # compare 25 vs 100
+      echo -e "\n${FOLDER25}\n${FOLDER100}\n"
+      Rscript scripts/compare_two_networks.R \
+              ${FOLDER25}/define_network_modules.RData \
+              ${FOLDER100}/define_network_modules.RData \
+              ${FOLDER25}/module_membership.txt \
+              ${FOLDER100}/module_membership.txt \
+              ${FOLDER25}/kDiff_per_module.txt \
+              ${FOLDER100}/kDiff_per_module.txt \
+              ${OUT25v100} \
+              --name-net1="min_mod_size_25" \
+              --name-net2="min_mod_size_100" 2> /dev/null
+    done
+  done
+done
+```
+
+> These comparisons are harder to interpret, but overall it looks like there are more modules in one network that are split in the other (and vice-versa), especially when `pamStage = TRUE` (in this case, you can see that some of the split modules don't have a very high correlation with its counterpart(s) in the other network). When `pamStage = FALSE`, you generally see more modules represented in the grey module of the other network.
+
+**Minmax vs zscore normalization**
+
+```bash
+module load R/3.6.0
+
+# trait to build network
+TRAIT=YLD
+# marker effects from rrblup
+for meff_model in rrblup gwas; do
+  # minimum number of markers per module
+  for minsize in 25 50 100; do
+    # define modules with and without the PAM stage
+    for pam in on off; do
+      # folder with results
+      FOLDER_M=analysis/networks/${TRAIT}/meff_${meff_model}/norm_minmax/min_mod_size_${minsize}/pamStage_${pam}
+      FOLDER_Z=analysis/networks/${TRAIT}/meff_${meff_model}/norm_zscore/min_mod_size_${minsize}/pamStage_${pam}
+      echo -e "\n${FOLDER_M}\n${FOLDER_Z}\n"
+      # output folder
+      OUT=analysis/networks/${TRAIT}/network_comparisons/minmax-vs-zscore/meff_${meff_model}/min_mod_size_${minsize}/pamStage_${pam}
+      mkdir -p ${OUT}
+      # compare networks
+      Rscript scripts/compare_two_networks.R \
+              ${FOLDER_M}/define_network_modules.RData \
+              ${FOLDER_Z}/define_network_modules.RData \
+              ${FOLDER_M}/module_membership.txt \
+              ${FOLDER_Z}/module_membership.txt \
+              ${FOLDER_M}/kDiff_per_module.txt \
+              ${FOLDER_Z}/kDiff_per_module.txt \
+              ${OUT} \
+              --name-net1="norm_minmax" \
+              --name-net2="norm_zscore" \
+              --diff-n-markers 2> /dev/null
+    done
+  done
+done
+```
+
+> Comparisons are even harder here because different normalizations had different CV cutoffs and not many markers overlap between the networks (~20-40%). Module relationship rarely follow a 1:1 ratio, so other metrics (e.g. kDiff) may be more informative about which network has better quality.
+
+**rrBLUP vs GWAS effects**
+
+```bash
+module load R/3.6.0
+
+# trait to build network
+TRAIT=YLD
+# type of normalization method to use
+for norm_method in minmax zscore; do
+  # minimum number of markers per module
+  for minsize in 25 50 100; do
+    # define modules with and without the PAM stage
+    for pam in on off; do
+      # folder with results
+      FOLDER_R=analysis/networks/${TRAIT}/meff_rrblup/norm_${norm_method}/min_mod_size_${minsize}/pamStage_${pam}
+      FOLDER_G=analysis/networks/${TRAIT}/meff_gwas/norm_${norm_method}/min_mod_size_${minsize}/pamStage_${pam}
+      echo -e "\n${FOLDER_R}\n${FOLDER_G}\n"
+      # output folder
+      OUT=analysis/networks/${TRAIT}/network_comparisons/rrblup-vs-gwas/norm_${norm_method}/min_mod_size_${minsize}/pamStage_${pam}
+      mkdir -p ${OUT}
+      # compare networks
+      Rscript scripts/compare_two_networks.R \
+              ${FOLDER_R}/define_network_modules.RData \
+              ${FOLDER_G}/define_network_modules.RData \
+              ${FOLDER_R}/module_membership.txt \
+              ${FOLDER_G}/module_membership.txt \
+              ${FOLDER_R}/kDiff_per_module.txt \
+              ${FOLDER_G}/kDiff_per_module.txt \
+              ${OUT} \
+              --name-net1="meff_rrblup" \
+              --name-net2="meff_gwas" \
+              --diff-n-markers 2> /dev/null
+    done
+  done
+done
+```
+
+> There's more overlap of markers between different marker effect type (~40-60%) than between normalization methods (~20-40%), but there's still a lot of modules that are split between marker effect types (i.e. not a 1:1 ratio).
