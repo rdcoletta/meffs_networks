@@ -12,13 +12,12 @@ options(stringsAsFactors = FALSE)
 
 usage <- function() {
   cat("
-description: check if GWAS hits are present in significant marker effect modules.
+description: check if GWAS hits are present in marker effect modules.
 
-usage: Rscript check_gwas-hits_meff-modules.R [gwas_filename] [modules_filename] [mod_pheno_filename]
-                                              [mod_ld_folder][output_folder] [...]
+usage: Rscript enrichment_gwas-hits_meff-modules.R [meff_filename] [modules_filename] [mod_pheno_filename]
+                                                   [mod_ld_folder] [output_folder] [...]
 
 positional arguments:
-  gwas_filename                 file with gwas hits
   meff_filename                 file containing marker effects for a trait (first column: marker names,
                                 remaining columns: environments)
   modules_filename              file with markers assigned to modules and with networks stats (e.g. kDiff)
@@ -31,9 +30,7 @@ optional argument:
   --type-connect-str=[VALUE]    choose the type of connection strenght between nodes: 'TOM' (default) or
                                 'adjacency'
   --soft-threshold=[VALUE]      the lowest power for which the scale-free topology fit index curve (default: 10)
-  --edge-threshold=[VALUE]      adjacency threshold for including edges in the network plots
-
-
+  --edge-threshold=[VALUE]      adjacency threshold for including edges in the network plots (default: 0.1)
 
 
 "
@@ -57,21 +54,20 @@ args <- commandArgs(trailingOnly = TRUE)
 if ("--help" %in% args) usage() & q(save = "no")
 
 # get positional arguments
-gwas_filename <- args[1]
-meff_filename <- args[2]
-modules_filename <- args[3]
-mod_pheno_filename <- args[4]
-mod_ld_folder <- args[5]
-output_folder <- args[6]
+meff_filename <- args[1]
+modules_filename <- args[2]
+mod_pheno_filename <- args[3]
+mod_ld_folder <- args[4]
+output_folder <- args[5]
 if (!dir.exists(output_folder)) dir.create(output_folder, recursive = TRUE)
 
 # set default of optional args
 type_connect_str <- "TOM"
-soft_threshold <- "12"
-edge_threshold <- "0.25"
+soft_threshold <- "10"
+edge_threshold <- "0.1"
 
 # assert to have the correct optional arguments
-pos_args <- 6
+pos_args <- 5
 if (length(args) < pos_args) stop(usage(), "missing positional argument(s)")
 
 if (length(args) > pos_args) {
@@ -114,18 +110,12 @@ if (suppressWarnings(!is.na(as.numeric(edge_threshold)))) {
 #### check for gwas hits ----
 
 # load data
-gwas <- fread(gwas_filename, header = TRUE, data.table = FALSE)
 meff <- fread(meff_filename, header = TRUE, data.table = FALSE)
 modules <- fread(modules_filename, header = TRUE, data.table = FALSE)
 mod_pheno <- fread(mod_pheno_filename, header = TRUE, data.table = FALSE)
 
 # keep either adjacency or TOM values
 modules <- subset(modules, source == type_connect_str)
-
-# get gwas hits -- this includes hits in ld with each other
-gwas_hits <- unique(gwas[!is.na(gwas[, 3]), 3])
-# keep only hits available in this network
-gwas_hits <- gwas_hits[gwas_hits %in% modules$marker]
 
 # get order of hub markers in each module
 modules <- group_by(modules, module) %>%
@@ -139,34 +129,58 @@ colnames(mod_pheno)[2:3] <- c("pval_cor_test", "pval_perm")
 modules <- merge(x = modules, y = mod_pheno, by = "module")
 rm(mod_pheno)
 
-# find which modules have these gwas hits
-modules$is_gwas_hit <- modules$marker %in% gwas_hits
-
 # how many of all gwas hits are in a significant module
+gwas_hits <- unique(modules[modules$gwas_status == "gwas_hit", "marker"])
 cat("gwas hit in a significant module: ",
-    round(sum(modules$is_gwas_hit & modules$pval_cor_test < 0.05) * 100 / length(gwas_hits), 2), "% (cor test) or ",
-    round(sum(modules$is_gwas_hit & modules$pval_perm < 0.05) * 100 / length(gwas_hits), 2), "% (perm)\n",
+    round(sum(modules$gwas_status == "gwas_hit" & modules$pval_cor_test < 0.05) * 100 / length(gwas_hits), 2), "% (cor test) or ",
+    round(sum(modules$gwas_status == "gwas_hit" & modules$pval_perm < 0.05) * 100 / length(gwas_hits), 2), "% (perm)\n",
     sep = "")
 
-# get name of modules associated with trait
-modules_cor_trait <- unique(modules[modules$pval_cor_test < 0.05 | modules$pval_perm < 0.05, "module"])
+# how many of all gwas hits are in a significant module
+gwas_top_non_sigs <- unique(modules[modules$gwas_status == "gwas_top_non_sig", "marker"])
+cat("gwas top non-significant hit in a significant module: ",
+    round(sum(modules$gwas_status == "gwas_top_non_sig" & modules$pval_cor_test < 0.05) * 100 / length(gwas_top_non_sigs), 2), "% (cor test) or ",
+    round(sum(modules$gwas_status == "gwas_top_non_sig" & modules$pval_perm < 0.05) * 100 / length(gwas_top_non_sigs), 2), "% (perm)\n",
+    sep = "")
+
+# create empty df to store stats for each module of network
+net_stats <- data.frame(stringsAsFactors = FALSE)
 
 cat("analyzing signficant modules...\n")
 # test for enrichment of gwas hits in modules associated with the trait
-for (mod in modules_cor_trait) {
+for (mod in unique(modules$module)) {
   
-  cat(paste0("  ", mod, " (", which(modules_cor_trait == mod), "/", length(modules_cor_trait), ")\n"))
+  cat(paste0("  ", mod, " (", which(unique(modules$module) == mod), "/", length(unique(modules$module)), ")\n"))
   
   # subset data
   mod_subset <- subset(modules, module == mod)
-
-  # run hypergeometric test
-  pval_gwas_hyper <- phyper(q = sum(mod_subset$is_gwas_hit) - 1,
-                            m = length(gwas_hits),
-                            n = nrow(modules) - length(gwas_hits),
-                            k = nrow(mod_subset),
+  
+  # network numbers
+  n_markers_net <- nrow(modules)
+  n_gwas_hits_net <- length(gwas_hits)
+  n_gwas_top_ns_net <- length(gwas_top_non_sigs)
+  
+  # module numbers
+  n_markers_mod <- nrow(mod_subset)
+  n_gwas_hits_mod <- sum(mod_subset$gwas_status == "gwas_hit")
+  n_gwas_top_ns_mod <- sum(mod_subset$gwas_status == "gwas_top_non_sig")
+  pval_trait_mod_cor <- unique(mod_subset$pval_cor_test)
+  pval_trait_mod_perm <- unique(mod_subset$pval_perm)
+  sig_module <- pval_trait_mod_cor < 0.05 | pval_trait_mod_perm < 0.05
+  
+  # run hypergeometric test on gwas hits
+  pval_gwas_hyper <- phyper(q = n_gwas_hits_mod - 1,
+                            m = n_gwas_hits_net,
+                            n = n_markers_net - n_gwas_hits_net,
+                            k = n_markers_mod,
                             lower.tail = FALSE, log.p = FALSE)
-
+  # run hypergeometric test on gwas top non-significant hits
+  pval_gwas_top_ns_hyper <- phyper(q = n_gwas_top_ns_mod - 1,
+                                   m = n_gwas_top_ns_net,
+                                   n = n_markers_net - n_gwas_top_ns_net,
+                                   k = n_markers_mod,
+                                   lower.tail = FALSE, log.p = FALSE)
+  
   # check effects of gwas hits across envs
   meff_gwas_plot <- filter(meff, marker %in% gwas_hits) %>%
     mutate(in_module = factor(if_else(marker %in% mod_subset$marker, true = TRUE, false = FALSE),
@@ -175,12 +189,14 @@ for (mod in modules_cor_trait) {
     ggplot() +
     geom_line(aes(x = env, y = effects, group = marker, color = in_module)) +
     scale_color_manual(values = c("#8080804D", "firebrick")) +
-    labs(title = paste0("Effects of GWAS hits in ", mod, " module across envs"),
-         subtitle = paste0("(markers: ", nrow(mod_subset), "/", nrow(modules), " - ",
-                           "gwas hits: ", sum(mod_subset$is_gwas_hit), "/", length(gwas_hits), " - ",
-                           "pval hyper: ", round(pval_gwas_hyper, 3), ")")) +
+    labs(title = bquote("Effects of GWAS hits in" ~ bold(.(mod)) ~ "module across envs"),
+         subtitle = paste0("markers - ", n_markers_mod, "/", n_markers_net, "\n",
+                           "gwas hits - ", n_gwas_hits_mod, "/", n_gwas_hits_net, " (",
+                           "pval hyper: ", round(pval_gwas_hyper, 3), ")\n",
+                           "gwas top non-sig hits - ", n_gwas_top_ns_mod, "/", n_gwas_top_ns_net, " (",
+                           "pval hyper: ", round(pval_gwas_top_ns_hyper, 3), ")\n")) +
     theme_bw() +
-    theme(panel.grid = element_blank())
+    theme(panel.grid = element_blank(), plot.subtitle = element_text(color = "gray40"))
 
   # print(meff_gwas_plot)
   ggsave(filename = paste0(output_folder, "/meff_gwas.", mod, ".pdf"),
@@ -190,13 +206,17 @@ for (mod in modules_cor_trait) {
   # load file
   ld_module <- paste0(mod_ld_folder, "/ld_markers_", mod, ".ld.gz")
   ld_module <- fread(ld_module, header = TRUE, data.table = FALSE)
-
+  
+  # get ld stats
+  ld_stats <- data.frame(t(as.numeric(summary(ld_module$R2)[2:5])), stringsAsFactors = FALSE)
+  colnames(ld_stats) <- c("ld_Q1", "ld_median", "ld_mean", "ld_Q3")
+  
   # plot distribution r2 for all markers
   ld_dist_plot <- ggplot(ld_module, aes(x = R2)) +
     geom_histogram(color = "black", fill = mod) +
     labs(title = paste0("LD distribution of ", mod, " module")) +
     theme_bw()
-
+  
   # print(ld_dist_plot)
   ggsave(filename = paste0(output_folder, "/ld_dist.", mod, ".pdf"),
          plot = ld_dist_plot, device = "pdf", width = 6, height = 6)
@@ -246,26 +266,32 @@ for (mod in modules_cor_trait) {
   set.vertex.attribute(mod_network,
                        attrname = "kWithin",
                        value = node_kWithin$kWithin)
-  # add whether marker is gwas hit or not
-  node_gwas_hit <- node_names %in% gwas_hits
+  # add whether marker is gwas hit, top non-sig hit, or not a gwas hit
+  node_gwas_status <- mod_subset[mod_subset$marker %in% node_names, c("marker", "gwas_status")]
+  node_gwas_status <- node_gwas_status[match(node_names, node_gwas_status$marker), ]
   set.vertex.attribute(mod_network,
-                       attrname = "is_gwas_hit",
-                       value = node_gwas_hit)
-
+                       attrname = "gwas_status",
+                       value = node_gwas_status$gwas_status)
+  
   # add vertex layout to network
   mod_network <- ggnetwork(mod_network, layout = "fruchtermanreingold", weights = "weight", cell.jitter = 0.5)
   # View(mod_network)
 
   # visualize network by hub markers
+  mod_network$gwas_status <- factor(mod_network$gwas_status,
+                                    levels = c("gwas_hit", "gwas_top_non_sig", "not_gwas_hit"))
   plot_net_hub <- ggplot(mod_network, aes(x = x, y = y, xend = xend, yend = yend)) +
     geom_edges(color = "#8080800D") +
-    geom_nodes(aes(size = kWithin, color = is_gwas_hit)) +
-    scale_color_manual(values = c("black", "firebrick")) +
+    geom_nodes(aes(size = kWithin, color = gwas_status)) +
+    scale_color_manual(values = c("firebrick", "darkblue", "black"), drop = FALSE) +
     theme_blank() +
     labs(title = paste0(mod, " module"),
-         subtitle = paste0("(markers: ", nrow(mod_subset), "/", nrow(modules), " - ",
-                           "gwas hits: ", sum(mod_subset$is_gwas_hit), "/", length(gwas_hits), " - ",
-                           "pval hyper: ", round(pval_gwas_hyper, 3), ")"))
+         subtitle = paste0("markers - ", nrow(mod_subset), "/", nrow(modules), "\n",
+                           "gwas hits - ", sum(mod_subset$gwas_status == "gwas_hit"), "/", length(gwas_hits), " (",
+                           "pval hyper: ", round(pval_gwas_hyper, 3), ")\n",
+                           "gwas top non-sig hits - ", sum(mod_subset$gwas_status == "gwas_top_non_sig"), "/", length(gwas_top_non_sigs), " (",
+                           "pval hyper: ", round(pval_gwas_top_ns_hyper, 3), ")\n")) +
+    theme(plot.subtitle = element_text(color = "gray40"))
 
   ggsave(filename = paste0(output_folder, "/mod_viz.", mod, ".by-hubs.pdf"),
          plot = plot_net_hub, device = "pdf", width = 10, height = 12)
@@ -278,14 +304,31 @@ for (mod in modules_cor_trait) {
     theme_blank() +
     labs(title = paste0(mod, " module"),
          subtitle = paste0("(markers: ", nrow(mod_subset), "/", nrow(modules), " - ",
-                           "gwas hits: ", sum(mod_subset$is_gwas_hit), "/", length(gwas_hits), " - ",
+                           "gwas hits: ", sum(mod_subset$gwas_status == "gwas_hit"), "/", length(gwas_hits), " - ",
                            "pval hyper: ", round(pval_gwas_hyper, 3), ")"))
 
   ggsave(filename = paste0(output_folder, "/mod_viz.", mod, ".by-ld.pdf"),
          plot = plot_net_ld, device = "pdf", width = 10, height = 12)
 
+  # add module numbers to final df
+  mod_stats <- data.frame(mod = mod,
+                          n_markers_mod = n_markers_mod,
+                          pval_trait_mod_cor = pval_trait_mod_cor,
+                          pval_trait_mod_perm = pval_trait_mod_perm,
+                          sig_module = sig_module,
+                          n_gwas_hits_mod = n_gwas_hits_mod,
+                          n_gwas_top_ns_mod = n_gwas_top_ns_mod,
+                          pval_gwas_hyper = pval_gwas_hyper,
+                          pval_gwas_top_ns_hyper = pval_gwas_top_ns_hyper,
+                          ld_stats,
+                          stringsAsFactors = FALSE)
+  net_stats <- rbind(net_stats, mod_stats)
+  
 }
+# write file
+fwrite(net_stats, file = paste0(output_folder, "/gwas_enrichment_per_module.txt"))
 cat("done!\n\n")
+
 
 
 # phyper(q, m, n, k, lower.tail = FALSE, log.p = FALSE)
@@ -319,12 +362,11 @@ cat("done!\n\n")
 
 #### debug ----
 
-# gwas_filename <- "../genomic_prediction/hybrids/analysis/gwas/summary_gwas.txt"
 # meff_filename <- "analysis/marker_effects/YLD/marker_effects.rrblup.txt"
-# modules_filename <- "analysis/networks/YLD/meff_rrblup/norm_zscore/min_mod_size_50/kDiff_per_module.txt"
-# mod_pheno_filename <- "analysis/networks/YLD/meff_rrblup/norm_zscore/min_mod_size_50/module-pheno_pvals.txt"
-# mod_ld_folder <- "analysis/networks/YLD/meff_rrblup/norm_zscore/min_mod_size_50/modules_ld"
-# output_folder <- "analysis/networks/YLD/meff_rrblup/norm_zscore/min_mod_size_50"
-# type_connect_str <- "adjacency"
-# soft_threshold <- 12
-# edge_threshold <- 0.25
+# modules_filename <- "analysis/networks/YLD/meff_rrblup/norm_zscore/min_mod_size_50/pamStage_off/kDiff_per_module.gwas-status.txt"
+# mod_pheno_filename <- "analysis/networks/YLD/meff_rrblup/norm_zscore/min_mod_size_50/pamStage_off/module-pheno_pvals.txt"
+# mod_ld_folder <- "analysis/networks/YLD/meff_rrblup/norm_zscore/min_mod_size_50/pamStage_off/modules_ld"
+# output_folder <- "analysis/networks/YLD/meff_rrblup/norm_zscore/min_mod_size_50/pamStage_off"
+# type_connect_str <- "TOM"
+# soft_threshold <- 20
+# edge_threshold <- 0.1
