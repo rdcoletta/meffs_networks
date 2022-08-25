@@ -205,22 +205,34 @@ for (mod in unique(modules$module)) {
 
   # load file
   ld_module <- paste0(mod_ld_folder, "/ld_markers_", mod, ".ld.gz")
-  ld_module <- fread(ld_module, header = TRUE, data.table = FALSE)
+  # use try() function to not break code if module doesn't have an LD file
+  # (grey modules may not have enough markers -- not subjected to minimum module size)
+  ld_module <- try(fread(ld_module, header = TRUE, data.table = FALSE))
   
-  # get ld stats
-  ld_stats <- data.frame(t(as.numeric(summary(ld_module$R2)[2:5])), stringsAsFactors = FALSE)
-  colnames(ld_stats) <- c("ld_Q1", "ld_median", "ld_mean", "ld_Q3")
+  if (class(ld_module) != "try-error") {
+    
+    # get ld stats
+    ld_stats <- data.frame(t(as.numeric(summary(ld_module$R2)[2:5])), stringsAsFactors = FALSE)
+    colnames(ld_stats) <- c("ld_Q1", "ld_median", "ld_mean", "ld_Q3")
+    
+    # plot distribution r2 for all markers
+    ld_dist_plot <- ggplot(ld_module, aes(x = R2)) +
+      geom_histogram(color = "black", fill = mod) +
+      labs(title = paste0("LD distribution of ", mod, " module")) +
+      theme_bw()
+    
+    # print(ld_dist_plot)
+    ggsave(filename = paste0(output_folder, "/ld_dist.", mod, ".pdf"),
+           plot = ld_dist_plot, device = "pdf", width = 6, height = 6)
+    
+  } else {
+    
+    # set ld stats to NA
+    ld_stats <- data.frame(ld_Q1 = NA, ld_median = NA, ld_mean = NA, ld_Q3 = NA,
+                           stringsAsFactors = FALSE)
+    
+  }
   
-  # plot distribution r2 for all markers
-  ld_dist_plot <- ggplot(ld_module, aes(x = R2)) +
-    geom_histogram(color = "black", fill = mod) +
-    labs(title = paste0("LD distribution of ", mod, " module")) +
-    theme_bw()
-  
-  # print(ld_dist_plot)
-  ggsave(filename = paste0(output_folder, "/ld_dist.", mod, ".pdf"),
-         plot = ld_dist_plot, device = "pdf", width = 6, height = 6)
-
   # select markers in that module
   mod_markers <- modules[modules$module == mod & modules$source == type_connect_str, "marker"]
 
