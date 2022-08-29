@@ -466,7 +466,7 @@ for meff_model in rrblup gwas; do
 done
 ```
 
-> Overall, correlation tests were more stringent than permutations (meaning there were more modules significantly associated with trait when doing permutations).
+> Overall, correlation tests were more stringent than permutations (meaning there were more modules significantly associated with trait when doing permutations). Also, networks that have grey module (i.e. module with markers not assigned to any other module) significantly associated with trait may suggest that the clustering settings were not optimal.
 
 
 ### Calculate LD for markers within each module
@@ -617,4 +617,12 @@ for meff_model in rrblup gwas; do
     done
   done
 done
+```
+
+Finally, I wrote `scripts/summarize_gwas_enrich.R` to summarize enrichment results from different networks, and found that modules enriched with gwas hits can be either significantly or not significantly associated with with trait variability across environments.
+
+```bash
+module load R/3.6.0
+
+Rscript scripts/summarize_gwas_enrich.R analysis/networks/YLD
 ```
