@@ -28,6 +28,7 @@ optional argument:
   --impute-type=VALUE         the marker type ('Major', 'Middle' or 'Minor') when imputing missing data at
                               the hapmap numericalization step (default: 'Middle')
   --no-missing-genotypes      exclude genotypes with missing data in any environment
+  --gwas-output               add this option to save GAPIT GWAS output
 
 
 "
@@ -61,6 +62,7 @@ marker_eff_model <- "rrblup"
 impute_effect <- "Add"
 impute_type <- "Middle"
 no_missing_genotypes <- FALSE
+gwas_output <- FALSE
 
 # assert to have the correct optional arguments
 pos_args <- 3
@@ -69,7 +71,8 @@ if (length(args) < pos_args) stop(usage(), "missing positional argument(s)")
 if (length(args) > pos_args) {
 
   opt_args <- args[-1:-pos_args]
-  opt_args_allowed <- c("--marker-eff-model", "--impute-effect", "--impute-type", "--no-missing-genotypes")
+  opt_args_allowed <- c("--marker-eff-model", "--impute-effect", "--impute-type",
+                        "--no-missing-genotypes", "--gwas-output")
   opt_args_requested <- as.character(sapply(opt_args, function(x) unlist(strsplit(x, split = "="))[1]))
   if (any(!opt_args_requested %in% opt_args_allowed)) stop(usage(), "wrong optional argument(s)")
 
@@ -243,15 +246,26 @@ if (marker_eff_model == "gwas") {
     # run gwas q+k
     pheno <- rownames_to_column(means[, env, drop = FALSE], var = "genotype")
     geno <- rownames_to_column(markers + 1, var = "genotype")
-    sink(paste0(output_folder, "/gwas.log"))
+    # change working directory if saving gwas output
+    if (gwas_output) {
+      curr_dir <- getwd()
+      env_outdir <- paste0(curr_dir, "/", output_folder, "/", env)
+      dir.create(env_outdir, recursive = TRUE)
+      setwd(env_outdir)
+      sink(paste0(env_outdir, "/gwas.log"))
+    } else {
+      sink(paste0(output_folder, "/gwas_", env, ".log"))
+    }
     gwas_model <- GAPIT(Y = pheno,
                         GD = geno,
                         GM = map,
                         kinship.algorithm = "VanRaden",
                         PCA.total = 5,
                         model = "MLM",
-                        file.output = FALSE)
+                        file.output = gwas_output)
     sink()
+    # go back to previous directory
+    if (gwas_output) setwd(curr_dir)
     # get effects
     if (!all(gwas_model$GWAS$SNP == map$SNP)) stop("markers don't match")
     marker_effects_env <- data.frame(gwas_model$GWAS$effect)
