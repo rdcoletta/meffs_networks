@@ -15,9 +15,5 @@ module load R/3.6.0
 # go to project folder
 cd ~/projects/marker-effects_networks
 
-# create output folder
-OUTFOLDER=analysis/networks/${TRAIT}/meff_${MEFF_MODEL}/norm_${NORM_METHOD}
-mkdir -p ${OUTFOLDER}
-
 # plot cv distribution
 Rscript scripts/plot_cv_meffs.R ${MEFF_FILE} ${OUTFOLDER} --norm-method=${NORM_METHOD}

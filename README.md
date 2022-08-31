@@ -109,7 +109,11 @@ for meff_model in rrblup gwas; do
   MEFF_FILE=analysis/marker_effects/${TRAIT}/marker_effects.${meff_model}.txt
   # type of normalization method to use
   for norm_method in minmax zscore none; do
-    sbatch --export=TRAIT=${TRAIT},MEFF_FILE=${MEFF_FILE},MEFF_MODEL=${meff_model},NORM_METHOD=${norm_method} scripts/plot_cv_meffs.sh
+    # create output folder
+    OUTFOLDER=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}
+    mkdir -p ${OUTFOLDER}
+    # submit job
+    sbatch --export=TRAIT=${TRAIT},MEFF_FILE=${MEFF_FILE},MEFF_MODEL=${meff_model},NORM_METHOD=${norm_method},OUTFOLDER=${OUTFOLDER} scripts/plot_cv_meffs.sh
   done
 done
 ```
