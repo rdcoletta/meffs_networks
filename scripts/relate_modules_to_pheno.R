@@ -20,7 +20,6 @@ optional argument:
   --help                      show this helpful message
   --norm-method=VALUE         method to normalize means across multiple environments. Available methods are
                               'minmax' (default), 'zscore', 'none' (i.e. no normalization)
-  --n-perm=VALUE              number of permutations to do (default: 1000)
   --seed=VALUE                seed number for shuffling trait data
 
 
@@ -52,8 +51,6 @@ if (!dir.exists(output_folder)) dir.create(output_folder, recursive = TRUE)
 
 # set default of optional args
 norm_method <- "minmax"
-seed <- 8871
-n_perm <- 1000
 
 # assert to have the correct optional arguments
 pos_args <- 3
@@ -62,7 +59,7 @@ if (length(args) < pos_args) stop(usage(), "missing positional argument(s)")
 if (length(args) > pos_args) {
 
   opt_args <- args[-1:-pos_args]
-  opt_args_allowed <- c("--norm-method", "--seed")
+  opt_args_allowed <- c("--norm-method")
   opt_args_requested <- as.character(sapply(opt_args, function(x) unlist(strsplit(x, split = "="))[1]))
   if (any(!opt_args_requested %in% opt_args_allowed)) stop(usage(), "wrong optional argument(s)")
 
@@ -111,12 +108,6 @@ if (norm_method == "zscore") {
   rm(mean, sd)
 }
 
-# shuffle data for permutation test
-set.seed(seed)
-for (i in 1:n_perm) {
-  pheno[, paste0("ctrl_", i)] <- sample(pheno$trait_value, replace = FALSE)
-}
-
 # get mean for each environment
 means <- pheno %>%
   group_by(env) %>%
@@ -159,115 +150,49 @@ labeledHeatmap(Matrix = moduleTraitCor,
                main = paste("Module-trait relationships\n(FDR-corrected p-values)"))
 dev.off()
 
-# plot module vs trait pattern across envs
-cor_plot <- rownames_to_column(MEs, "env") %>%
-  pivot_longer(-env, names_to = "mod_name", values_to = "mod_eigen") %>%
-  group_by(mod_name) %>%
-  mutate(trait_value = means$trait) %>%
-  ungroup() %>%
-  pivot_longer(mod_eigen:trait_value, names_to = "trait", values_to = "value") %>%
-  mutate(mod_name = factor(mod_name,
-                           levels = names(moduleTraitCor[, 1]),
-                           labels = paste0(names(moduleTraitCor[, 1]),
-                                           " (", round(moduleTraitCor[, 1], digits = 2), ")"))) %>%
-  ggplot(aes(x = env, y = value, color = trait, group = trait)) +
-  geom_line() +
-  facet_wrap(~ mod_name) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))
 
-ggsave(filename = paste0(output_folder, "/trait_module_patterns.pdf"),
-       plot = cor_plot, device = "pdf")
+# reformat cor table
+moduleTraitCor <- data.frame(trait_avg = moduleTraitCor, type = "cor", check.names = FALSE)
+moduleTraitCor <- rownames_to_column(moduleTraitCor, var = "module")
+# reformat pval table
+moduleTraitPvalue <- data.frame(trait_avg = moduleTraitPvalue, type = "pval", check.names = FALSE)
+moduleTraitPvalue <- rownames_to_column(moduleTraitPvalue, var = "module")
+# merge cor and pval tables
+pval_table <- rbind(moduleTraitCor, moduleTraitPvalue)
 
 
-
-#### run permutation test with pheno data ----
-
-# credits: https://dgarcia-eu.github.io/SocialDataScience/5_SocialNetworkPhenomena/056_PermutationTests/PermutationTests
-
-# get correlations for permutated data
-cor_perm <- cor(MEs, means[, -1], use = "p")
-
-# prepare matrix to keep pvalues of permutation test
-pval_perm <- matrix(nrow = nrow(moduleTraitCor), ncol = 1)
-rownames(pval_perm) <- rownames(moduleTraitCor)
-
-# calculate pvalue of correlations for each module
-for (mod in rownames(moduleTraitCor)) {
-
-  # # plot histogram
-  # hist(cor_perm[mod, ], xlim = c(-1, 1))
-  # abline(v = moduleTraitCor[mod, ], col="red")
-
-  # get pvalue
-  pval_perm[mod, ] <- (sum(abs(cor_perm[mod, ]) >= abs(moduleTraitCor[mod, ])) + 1) / length(cor_perm[mod, ])
-
-}
-
-# # ???
-# # correct for multiple testing
-# pval_perm <- apply(pval_perm, MARGIN = 2, function(x) p.adjust(x, method = "fdr"))
-# # ???
-
-# write pvalues from different methods
-pval_table <- data.frame(cor_test = moduleTraitPvalue, perm_pheno = pval_perm)
-pval_table <- rownames_to_column(pval_table, var = "module")
-pval_table <- pval_table[order(pval_table$cor_test, pval_table$perm_pheno), ]
+# reformat table again
+pval_table <- pivot_longer(pval_table, cols = -c(module, type), names_to = "env_idx", values_to = "value")
+pval_table <- pivot_wider(pval_table, names_from = "type", values_from = "value")
+# reorder by pval
+pval_table <- pval_table[order(pval_table$pval), ]
+# write table
 fwrite(pval_table, file = paste0(output_folder, "/module-pheno_pvals.txt"),
        quote = FALSE, sep = "\t", na = NA, row.names = FALSE)
 
+# plot module vs trait pattern across envs
+cor_plot <- rownames_to_column(MEs, "env") %>%
+  pivot_longer(-env, names_to = "mod_name", values_to = "mod_eigen") %>% 
+  full_join(y = rownames_to_column(means, "env"), by = "env") %>% 
+  rename(module = mod_name, trait_value = trait) %>%
+  full_join(y = pval_table[, colnames(pval_table) != "env_idx"], by = "module") %>%
+  pivot_longer(mod_eigen:trait_value, names_to = "type", values_to = "value") %>% 
+  mutate(module = factor(module,
+                         levels = pval_table[, "module", drop = TRUE],
+                         labels = apply(pval_table, MARGIN = 1, function(mod) {
+                           paste0(mod["module"], "\n(cor = ",
+                                  round(as.numeric(mod["cor"]), 2), ", pval = ",
+                                  round(as.numeric(mod["pval"]), 2), ")")
+                         }))) %>% 
+  ggplot(aes(x = env, y = value, color = type, group = type)) +
+  geom_line() +
+  facet_wrap(~ module, nrow = 4) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        panel.grid.minor = element_blank())
 
-
-#### run permutation test with module data ----
-
-# set.seed(seed)
-# # create an empty matrix to store correlation results
-# shuffledMEsCor <- matrix(nrow = nrow(moduleTraitCor), ncol = n_perm)
-# rownames(shuffledMEsCor) <- rownames(moduleTraitCor)
-#
-# for (i in 1:n_perm) {
-#
-#   # break marker-module association
-#   shuffledColors <- sample(moduleColors, replace = FALSE)
-#   # calculate eigengenes
-#   shuffledMEList <- moduleEigengenes(marker_effects, colors = shuffledColors)
-#   shuffledMEs <- shuffledMEList$eigengenes
-#
-#   # format module data
-#   rownames(shuffledMEs) <- gsub("trait_", "", rownames(shuffledMEs))
-#   rownames(shuffledMEs) <- gsub(".", "-", rownames(shuffledMEs), fixed = TRUE)
-#   # make sure samples match
-#   shuffledMEs <- shuffledMEs[match(rownames(means), rownames(shuffledMEs)),
-#                              match(rownames(shuffledMEsCor), colnames(shuffledMEs))]
-#
-#   # calculate correlation between module and trait
-#   shuffledMEsCor[, i] <- cor(means$trait, shuffledMEs)
-#
-# }
-#
-# # prepare matrix to keep pvalues of permutation test
-# shuffledMEsPvalue <- matrix(nrow = nrow(moduleTraitCor), ncol = 1)
-# rownames(shuffledMEsPvalue) <- rownames(moduleTraitCor)
-#
-# # calculate pvalue of correlations for each module
-# for (mod in rownames(shuffledMEsCor)) {
-#
-#
-#   # #### CAN I MAKE THIS HISTOGRAM AS ABSOLUTE VALUES TO IGNORE SIGN OF CORRELATION?
-#   # # plot histogram
-#   # hist(abs(shuffledMEsCor[mod, ]), xlim = c(-1, 1))
-#   # abline(v = abs(moduleTraitCor[mod, ]), col="red")
-#   # ####
-#
-#   # get pvalue
-#   shuffledMEsPvalue[mod, ] <- (sum(abs(shuffledMEsCor[mod, ]) >= abs(moduleTraitCor[mod, ])) + 1) / length(shuffledMEsCor[mod, ])
-#
-# }
-#
-# # write pvalues from different methods
-# pval_table <- data.frame(cor_test = moduleTraitPvalue, perm_pheno = pval_perm, perm_markers = shuffledMEsPvalue)
-# pval_table <- rownames_to_column(pval_table, var = "module")
-# fwrite(pval_table, file = paste0(output_folder, "/module-pheno_pvals.txt"),
-#        quote = FALSE, sep = "\t", na = NA, row.names = FALSE)
+ggsave(filename = paste0(output_folder, "/trait_module_patterns.pdf"), plot = cor_plot,
+       device = "pdf", height = 12, width = 3 * ceiling(length(MEs) / 4))
 
 
 
@@ -277,5 +202,3 @@ fwrite(pval_table, file = paste0(output_folder, "/module-pheno_pvals.txt"),
 # trait_file <- "data/1stStage_BLUEs.YLD-per-env.txt"
 # output_folder <- "tests/networks/YLD"
 # norm_method <- "minmax"
-# seed <- 8871
-# n_perm <- 1000
