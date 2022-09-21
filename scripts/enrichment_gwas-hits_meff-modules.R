@@ -125,22 +125,19 @@ modules <- group_by(modules, module) %>%
 
 # add p-values to modules
 mod_pheno$module <- gsub("^ME", "", mod_pheno$module, perl = TRUE)
-colnames(mod_pheno)[2:3] <- c("pval_cor_test", "pval_perm")
 modules <- merge(x = modules, y = mod_pheno, by = "module")
 rm(mod_pheno)
 
 # how many of all gwas hits are in a significant module
 gwas_hits <- unique(modules[modules$gwas_status == "gwas_hit", "marker"])
 cat("gwas hit in a significant module: ",
-    round(sum(modules$gwas_status == "gwas_hit" & modules$pval_cor_test < 0.05) * 100 / length(gwas_hits), 2), "% (cor test) or ",
-    round(sum(modules$gwas_status == "gwas_hit" & modules$pval_perm < 0.05) * 100 / length(gwas_hits), 2), "% (perm)\n",
+    round(sum(modules$gwas_status == "gwas_hit" & modules$pval < 0.05) * 100 / length(gwas_hits), 2), "%",
     sep = "")
 
 # how many of all gwas hits are in a significant module
 gwas_top_non_sigs <- unique(modules[modules$gwas_status == "gwas_top_non_sig", "marker"])
 cat("gwas top non-significant hit in a significant module: ",
-    round(sum(modules$gwas_status == "gwas_top_non_sig" & modules$pval_cor_test < 0.05) * 100 / length(gwas_top_non_sigs), 2), "% (cor test) or ",
-    round(sum(modules$gwas_status == "gwas_top_non_sig" & modules$pval_perm < 0.05) * 100 / length(gwas_top_non_sigs), 2), "% (perm)\n",
+    round(sum(modules$gwas_status == "gwas_top_non_sig" & modules$pval < 0.05) * 100 / length(gwas_top_non_sigs), 2), "%",
     sep = "")
 
 # create empty df to store stats for each module of network
@@ -164,9 +161,8 @@ for (mod in unique(modules$module)) {
   n_markers_mod <- nrow(mod_subset)
   n_gwas_hits_mod <- sum(mod_subset$gwas_status == "gwas_hit")
   n_gwas_top_ns_mod <- sum(mod_subset$gwas_status == "gwas_top_non_sig")
-  pval_trait_mod_cor <- unique(mod_subset$pval_cor_test)
-  pval_trait_mod_perm <- unique(mod_subset$pval_perm)
-  sig_module <- pval_trait_mod_cor < 0.05 | pval_trait_mod_perm < 0.05
+  pval_trait_mod_cor <- unique(mod_subset$pval)
+  sig_module <- pval_trait_mod_cor < 0.05
   
   # run hypergeometric test on gwas hits
   pval_gwas_hyper <- phyper(q = n_gwas_hits_mod - 1,
@@ -326,7 +322,6 @@ for (mod in unique(modules$module)) {
   mod_stats <- data.frame(mod = mod,
                           n_markers_mod = n_markers_mod,
                           pval_trait_mod_cor = pval_trait_mod_cor,
-                          pval_trait_mod_perm = pval_trait_mod_perm,
                           sig_module = sig_module,
                           n_gwas_hits_mod = n_gwas_hits_mod,
                           n_gwas_top_ns_mod = n_gwas_top_ns_mod,
@@ -334,6 +329,7 @@ for (mod in unique(modules$module)) {
                           pval_gwas_top_ns_hyper = pval_gwas_top_ns_hyper,
                           ld_stats,
                           stringsAsFactors = FALSE)
+  
   net_stats <- rbind(net_stats, mod_stats)
   
 }
