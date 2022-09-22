@@ -253,7 +253,7 @@ done
 
 > In general, kDiff plots from GWAS effects networks seem to be have better quality modules (i.e. markers with more connections within their own module than with other modules) than those from rrblup effects networks. Turning off the `pamStage` when assigning modules also seem to result in slightly better kDiff, cluster coefficient (i.e. tendency to associate with only a select group) and TOM plots than when this option is on (more visible when GWAS effects were used).
 
-In addition, I wrote `scripts/compare_two_networks.R` to check which modules in one network corresponds to another module in a different network. This will help us understand how different parameters chosen during network construction affects the clustering of markers, and also help identify correponding modules when correlating networks with traits.
+In addition, I wrote `scripts/compare_two_networks.R` to check which modules in one network corresponds to another module in a different network. This will help us understand how different parameters chosen during network construction affects the clustering of markers, and also help identify correponding modules when correlating networks with traits. To do that, I calculate the correlation between the module memberships (the correlation of the module eigengene and the marker effect profile) of two different networks.
 
 **PAM stage on vs off**
 
@@ -440,42 +440,9 @@ done
 
 
 
-## Relate modules to phenotypic and environmental data
+### Step 6. Calculate LD for markers within each module
 
-To validate whether the modules I found have any biological meaning, we need to test if there are any modules that are stastically associated with the trait of interest. The `scripts/relate_modules_to_pheno.sh` does just that and outputs the p-values of correlation tests (corrected for multiple testing) and of permutations.
-
-```bash
-# trait to build network
-TRAIT=YLD
-# phenotypic data to correlate to modules
-TRAIT_FILE=data/1stStage_BLUEs.YLD-per-env.txt
-
-# marker effects from rrblup
-for meff_model in rrblup gwas; do
-  # type of normalization method to use
-  for norm_method in minmax zscore; do
-    # minimum number of markers per module
-    for minsize in 25 50 100; do
-      # define modules with and without the PAM stage
-      for pam in on off; do
-        # folder with results
-        FOLDER=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}/min_mod_size_${minsize}/pamStage_${pam}
-        # file with saved R variables from step 2
-        RDATA=${FOLDER}/define_network_modules.RData
-        # submit job
-        sbatch --export=RDATA=${RDATA},TRAIT_FILE=${TRAIT_FILE},OUTFOLDER=${FOLDER} scripts/relate_modules_to_pheno.sh
-      done
-    done
-  done
-done
-```
-
-> Overall, correlation tests were more stringent than permutations (meaning there were more modules significantly associated with trait when doing permutations). Also, networks that have grey module (i.e. module with markers not assigned to any other module) significantly associated with trait may suggest that the clustering settings were not optimal.
-
-
-### Calculate LD for markers within each module
-
-Another important thing to check how many markers in a module are in LD with each other. If all of them are in perfect LD, then the marker effect networks would be just picking up LD without any other biological reason for grouping those markers. The `scripts/ld_markers_modules.sh` calculates LD all markers within a module (even if they are in different chromosomes).
+An important thing to check is how many markers in a module are in LD with each other. If all of them are in perfect LD, then the marker effect networks would be just picking up LD without any other biological reason for grouping those markers. The `scripts/ld_markers_modules.sh` calculates LD all markers within a module (even if they are in different chromosomes).
 
 ```bash
 # trait to build network
@@ -500,6 +467,38 @@ for meff_model in rrblup gwas; do
         MODSUMMARY=${FOLDER}/kDiff_per_module.txt
         # submit job
         sbatch --export=MODSUMMARY=${MODSUMMARY},MODFOLDER=${MODFOLDER},MARKERS=${MARKERS} scripts/ld_markers_modules.sh
+      done
+    done
+  done
+done
+```
+
+
+
+## Relate modules to phenotype
+
+To validate whether the modules I found have any biological meaning, we need to test if there are any modules that are stastically associated with the trait of interest. In the context of marker effect networks, the average phenotypic value for a particular environment can be thought as an index of environmental quality. The `scripts/relate_modules_to_pheno.sh` does just that and outputs the p-values of correlation tests (corrected for multiple testing) and of permutations.
+
+```bash
+# trait to build network
+TRAIT=YLD
+# phenotypic data to correlate to modules
+TRAIT_FILE=data/1stStage_BLUEs.YLD-per-env.txt
+
+# marker effects from rrblup
+for meff_model in rrblup gwas; do
+  # type of normalization method to use
+  for norm_method in minmax zscore; do
+    # minimum number of markers per module
+    for minsize in 25 50 100; do
+      # define modules with and without the PAM stage
+      for pam in on off; do
+        # folder with results
+        FOLDER=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}/min_mod_size_${minsize}/pamStage_${pam}
+        # file with saved R variables from step 2
+        RDATA=${FOLDER}/define_network_modules.RData
+        # submit job
+        sbatch --export=RDATA=${RDATA},TRAIT_FILE=${TRAIT_FILE},OUTFOLDER=${FOLDER} scripts/relate_modules_to_pheno.sh
       done
     done
   done
