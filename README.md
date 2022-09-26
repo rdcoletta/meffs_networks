@@ -629,3 +629,90 @@ module load R/3.6.0
 
 Rscript scripts/summarize_gwas_enrich.R analysis/networks/YLD
 ```
+
+
+
+## Relate modules to environmental covariables
+
+Since we are interested in understanding phenotypic plasticity across environments, we also want to see if the network modules correlate with environmental covariables. To do that, we first extract these covariables running `scripts/get_env_types.R`.
+
+```bash
+module load R/3.6.0
+
+# transfer file with env coordinates from different project
+cp ../genomic_prediction/hybrids/data/usda_sites_coord_for_simulation.csv data/env_sites_coord.csv
+
+# get env covariables
+Rscript scripts/get_env_types.R data/env_sites_coord.csv \
+                                data/env_covariables \
+                                --country=USA \
+                                --interval-window=3
+
+# remove temp files
+rm USA*_msk_alt.*
+```
+
+> Note: had to run this script locally due to some sort of incompatibility with MSI server. I transfered the files to MSI afterwards using FileZilla.
+
+Due to high number of time points and environmental covariables, we'll also do a PCA to reduce dimensionality.
+
+```bash
+Rscript scripts/pca_env_idx.R \
+        data/env_covariables/env_covariables_means_per_intervals.txt \
+        data/env_covariables \
+        --per-intervals
+```
+
+In addition, we were also interested in correlating the module eigenvalues with environmental indices given by Finlay-Wilkson regression.
+
+```bash
+module load R/3.6.0
+
+# get env indices from FW
+Rscript scripts/get_FW_env-idx.R data/1stStage_BLUEs.YLD-per-env.txt \
+                                 analysis/FW/YLD
+```
+
+Then, we correlate these covariables with the eigenvalues of each module with `scripts/relate_modules_to_env_idx.sh` and summarize their correlation with `scripts/summarize_mod-env-idx_relationship.R`.
+
+```bash
+module load R/3.6.0
+
+# trait to build network
+TRAIT=YLD
+
+# marker effects from rrblup
+for meff_model in rrblup gwas; do
+  # type of normalization method to use
+  for norm_method in minmax zscore; do
+    # minimum number of markers per module
+    for minsize in 25 50 100; do
+      # define modules with and without the PAM stage
+      for pam in on off; do
+        # folder with results
+        FOLDER=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}/min_mod_size_${minsize}/pamStage_${pam}
+        # file with saved R variables from step 2
+        RDATA=${FOLDER}/define_network_modules.RData
+        # env indices to correlate to modules
+        for idx_type in means intervals pca fw; do
+          # means over entire season
+          [[ ${idx_type} == "means" ]] && EC_FILE=data/env_covariables/env_covariables_means.txt
+          # idx per 3-day intervals
+          [[ ${idx_type} == "intervals" ]] && EC_FILE=data/env_covariables/env_covariables_means_per_intervals.txt
+          # principal components
+          [[ ${idx_type} == "pca" ]] && EC_FILE=data/env_covariables/pca_env_idx.txt
+          # FW indices
+          [[ ${idx_type} == "fw" ]] && EC_FILE=analysis/FW/YLD/FW_env_idx.txt
+          # define output folder
+          OUTFOLDER=${FOLDER}/mod_env-idx_${idx_type}
+          # submit job
+          sbatch --export=RDATA=${RDATA},EC_FILE=${EC_FILE},OUTFOLDER=${OUTFOLDER},IDX_TYPE=${idx_type} scripts/relate_modules_to_env_idx.sh
+        done
+      done
+    done
+  done
+done
+
+# summarize correlations
+Rscript scripts/summarize_mod-env-idx_relationship.R analysis/networks/YLD
+```

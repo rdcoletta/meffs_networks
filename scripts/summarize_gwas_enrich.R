@@ -116,7 +116,7 @@ fwrite(enrichment_results, file = paste0(folder_base, "/gwas_enrichment_per_netw
 # enrichment of gwas hits per signficant trait-module associations
 plot_gwas_per_sig_mod <- enrichment_results %>% 
   group_by(meff_model, norm_method, minsize, pamStage) %>% 
-  filter(pval_trait_mod_perm < 0.05) %>% 
+  filter(pval_trait_mod_cor < 0.05) %>% 
   mutate(prop_gwas_hits_mod = round(n_gwas_hits_mod / n_markers_mod, digits = 2),
          prop_gwas_top_ns_mod = round(n_gwas_top_ns_mod / n_markers_mod, digits = 2),
          prop_not_gwas_hits_mod = 1 - prop_gwas_hits_mod - prop_gwas_top_ns_mod,
@@ -143,7 +143,7 @@ ggsave(filename = paste0(folder_base, "/gwas_enrichment_per_sig-mod.pdf"),
 # enrichment of gwas hits per not signficant trait-module associations
 plot_gwas_per_not_sig_mod <- enrichment_results %>% 
   group_by(meff_model, norm_method, minsize, pamStage) %>% 
-  filter(pval_trait_mod_perm > 0.05) %>% 
+  filter(pval_trait_mod_cor > 0.05) %>% 
   mutate(prop_gwas_hits_mod = round(n_gwas_hits_mod / n_markers_mod, digits = 2),
          prop_gwas_top_ns_mod = round(n_gwas_top_ns_mod / n_markers_mod, digits = 2),
          prop_not_gwas_hits_mod = 1 - prop_gwas_hits_mod - prop_gwas_top_ns_mod,
