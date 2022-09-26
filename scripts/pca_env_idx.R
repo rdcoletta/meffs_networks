@@ -113,7 +113,7 @@ ggsave(pca_biplot, filename = paste0(output_folder, "/pca_biplot.pdf"),
 
 # calculate contributions (percent variance) of env covariables to each PC
 pca_contrib <- data.frame(stringsAsFactors = FALSE)
-for (pc in 1:(ncol(pca_results) - 1)) {
+for (pc in 1:length(unique(pca_results$covariable))) {
   
   # calculate contributions to PC
   pca_contrib_pc <- fviz_contrib(pca, choice = "var", axes = pc)
@@ -137,7 +137,7 @@ fwrite(pca_contrib, file = paste0(output_folder, "/pca_contributions.txt"),
 
 
 
-##### debug ----
+#### debug ----
 
 # env_idx_file <- "data/env_covariables/env_covariables_means_per_intervals.txt"
 # output_folder <- "data/env_covariables"
