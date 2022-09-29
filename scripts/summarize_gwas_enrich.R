@@ -134,7 +134,7 @@ plot_gwas_per_sig_mod <- enrichment_results %>%
   theme_bw() +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
         panel.grid.minor = element_blank()) +
-  labs(title = "Significant trait-module associations (permutation)",
+  labs(title = "Significant trait-module associations",
        x = "Modules", y = "Proportion")
 
 ggsave(filename = paste0(folder_base, "/gwas_enrichment_per_sig-mod.pdf"),
@@ -161,7 +161,7 @@ plot_gwas_per_not_sig_mod <- enrichment_results %>%
   theme_bw() +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
         panel.grid.minor = element_blank()) +
-  labs(title = "Not significant trait-module associations (permutation)",
+  labs(title = "Not significant trait-module associations",
        x = "Modules", y = "Proportion")
 
 ggsave(filename = paste0(folder_base, "/gwas_enrichment_per_not-sig-mod.pdf"),
