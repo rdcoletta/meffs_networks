@@ -716,3 +716,16 @@ done
 # summarize correlations
 Rscript scripts/summarize_mod-env-idx_relationship.R analysis/networks/YLD
 ```
+
+Finally, plot the relationship between principal components and module eigeinvalues and the top 20 covariables that contributes the most to that PC with `scripts/plot_mod-env-idx_pca.R`.
+
+```bash
+module load R/3.6.0
+
+Rscript scripts/plot_mod-env-idx_pca.R \
+        analysis/networks/YLD \
+        analysis/networks/YLD/module-env-idx_per_network.pca.txt \
+        data/env_covariables/pca_env_idx.txt \
+        data/env_covariables/pca_contributions.txt \
+        analysis/networks/YLD/mod_pc_contrib
+```
