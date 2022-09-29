@@ -81,16 +81,6 @@ idx_type <- unlist(strsplit(idx_type, split = ","))
 
 
 
-
-model = meff_model[1]
-norm = norm_method[1]
-size = minsize[1]
-pam = pamStage[1]
-type = idx_type[1]
-
-
-
-
 #### summarize module-env idx relationships ----
 
 for (type in idx_type) {
