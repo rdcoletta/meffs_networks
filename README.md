@@ -249,6 +249,9 @@ for meff_model in rrblup gwas; do
     done
   done
 done
+
+# summarize network quality results
+Rscript scripts/summarize_qc_networks.R analysis/networks/YLD
 ```
 
 > In general, kDiff plots from GWAS effects networks seem to be have better quality modules (i.e. markers with more connections within their own module than with other modules) than those from rrblup effects networks. Turning off the `pamStage` when assigning modules also seem to result in slightly better kDiff, cluster coefficient (i.e. tendency to associate with only a select group) and TOM plots than when this option is on (more visible when GWAS effects were used).
@@ -717,15 +720,49 @@ done
 Rscript scripts/summarize_mod-env-idx_relationship.R analysis/networks/YLD
 ```
 
-Finally, plot the relationship between principal components and module eigeinvalues and the top 20 covariables that contributes the most to that PC with `scripts/plot_mod-env-idx_pca.R`.
+Finally, plot the relationship between environmental indices and module eigeinvalues, the markers from different networks correlated with same environmental index, and the top covariables that contributes the most to each principal component of the PCA analysis.
 
 ```bash
 module load R/3.6.0
 
-Rscript scripts/plot_mod-env-idx_pca.R \
-        analysis/networks/YLD \
-        analysis/networks/YLD/module-env-idx_per_network.pca.txt \
-        data/env_covariables/pca_env_idx.txt \
+for idx_type in means intervals pca fw; do
+
+  # means over entire season
+  [[ ${idx_type} == "means" ]] && EC_FILE=data/env_covariables/env_covariables_means.txt
+  # idx per 3-day intervals
+  [[ ${idx_type} == "intervals" ]] && EC_FILE=data/env_covariables/env_covariables_means_per_intervals.txt
+  # principal components
+  [[ ${idx_type} == "pca" ]] && EC_FILE=data/env_covariables/pca_env_idx.txt
+  # FW indices
+  [[ ${idx_type} == "fw" ]] && EC_FILE=analysis/FW/YLD/FW_env_idx.txt
+
+  # define p-values
+  if [[ ${idx_type} == "means" ]]; then
+    PVAL=0.1
+  else
+    PVAL=0.05
+  fi
+
+  # plot env_idx-module relationships
+  Rscript scripts/plot_mod-env-idx.R \
+          analysis/networks/YLD \
+          analysis/networks/YLD/module-env-idx_per_network.${idx_type}.txt \
+          ${EC_FILE} \
+          analysis/networks/YLD/plots_mod-env-idx \
+          --p-value=${PVAL}
+
+  # check markers in modules that are correlated to the same env idx
+  Rscript scripts/markers_correlated_same_env_idx.R \
+          analysis/networks/YLD \
+          analysis/networks/YLD/module-env-idx_per_network.${idx_type}.txt \
+          analysis/networks/YLD/plots_mod-env-idx \
+          --p-value=${PVAL}
+
+done
+
+# plot top covariables contributing to a PC
+Rscript scripts/plot_pc_contributions.R \
         data/env_covariables/pca_contributions.txt \
-        analysis/networks/YLD/mod_pc_contrib
+        analysis/networks/YLD/pc_contributions \
+        --prop-covariables=0.05
 ```
