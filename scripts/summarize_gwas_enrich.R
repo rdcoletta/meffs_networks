@@ -26,12 +26,12 @@ optional argument:
 
 
 getArgValue <- function(arg) {
-  
+
   # get value from command-line arguments
   arg <- unlist(strsplit(arg, "="))
   if (length(arg) == 1) return(TRUE)
   if (length(arg) > 1) return(arg[2])
-  
+
 }
 
 #### command line options ----
@@ -52,12 +52,12 @@ pamStage <- "on,off"
 if (length(args) < 1) stop(usage(), "missing positional argument(s)")
 
 if (length(args) > 1) {
-  
+
   opt_args <- args[-1]
   opt_args_allowed <- c("--meff-model", "--norm-method", "--minsize", "--pamStage")
   opt_args_requested <- as.character(sapply(opt_args, function(x) unlist(strsplit(x, split = "="))[1]))
   if (any(!opt_args_requested %in% opt_args_allowed)) stop(usage(), "wrong optional argument(s)")
-  
+
   # change default based on the argument provided
   for (argument in opt_args_allowed) {
     if (any(grepl(argument, opt_args_requested))) {
@@ -66,7 +66,7 @@ if (length(args) > 1) {
       assign(arg_name, arg_value)
     }
   }
-  
+
 }
 
 # adjust format from optional arguments
@@ -86,15 +86,15 @@ for (model in meff_model) {
   for (norm in norm_method) {
     for (size in minsize) {
       for (pam in pamStage) {
-        
+
         # get folder with enrichment results for a network setting
         folder_enrich <- paste0(folder_base, "/meff_", model, "/norm_", norm,
                                   "/min_mod_size_", size, "/pamStage_", pam)
-        
+
         # get results
         network_enrich <- paste0(folder_enrich, "/gwas_enrichment_per_module.txt")
         network_enrich <- try(fread(network_enrich, header = TRUE, data.table = FALSE))
-        
+
         if (class(network_enrich) != "try-error") {
           # add network settings
           network_enrich <- data.frame(meff_model = model, norm_method = norm,
@@ -103,7 +103,7 @@ for (model in meff_model) {
           # get accuracy results
           enrichment_results <- rbind(enrichment_results, network_enrich)
         }
-        
+
       }
     }
   }
@@ -114,13 +114,13 @@ fwrite(enrichment_results, file = paste0(folder_base, "/gwas_enrichment_per_netw
 
 # plot summary
 # enrichment of gwas hits per signficant trait-module associations
-plot_gwas_per_sig_mod <- enrichment_results %>% 
-  group_by(meff_model, norm_method, minsize, pamStage) %>% 
-  filter(pval_trait_mod_cor < 0.05) %>% 
+plot_gwas_per_sig_mod <- enrichment_results %>%
+  group_by(meff_model, norm_method, minsize, pamStage) %>%
+  filter(pval_trait_mod_cor < 0.05) %>%
   mutate(prop_gwas_hits_mod = round(n_gwas_hits_mod / n_markers_mod, digits = 2),
          prop_gwas_top_ns_mod = round(n_gwas_top_ns_mod / n_markers_mod, digits = 2),
          prop_not_gwas_hits_mod = 1 - prop_gwas_hits_mod - prop_gwas_top_ns_mod,
-         sig_gwas_hyper = pval_gwas_hyper < 0.05) %>% 
+         sig_gwas_hyper = pval_gwas_hyper < 0.05) %>%
   select(mod, prop_gwas_hits_mod, prop_gwas_top_ns_mod, prop_not_gwas_hits_mod, sig_gwas_hyper) %>%
   arrange(prop_gwas_hits_mod, .by_group = TRUE) %>%
   pivot_longer(-c(meff_model, norm_method, minsize, pamStage, mod, sig_gwas_hyper),
@@ -141,13 +141,13 @@ ggsave(filename = paste0(folder_base, "/gwas_enrichment_per_sig-mod.pdf"),
        plot = plot_gwas_per_sig_mod, device = "pdf", width = 15, height = 14)
 
 # enrichment of gwas hits per not signficant trait-module associations
-plot_gwas_per_not_sig_mod <- enrichment_results %>% 
-  group_by(meff_model, norm_method, minsize, pamStage) %>% 
-  filter(pval_trait_mod_cor > 0.05) %>% 
+plot_gwas_per_not_sig_mod <- enrichment_results %>%
+  group_by(meff_model, norm_method, minsize, pamStage) %>%
+  filter(pval_trait_mod_cor > 0.05) %>%
   mutate(prop_gwas_hits_mod = round(n_gwas_hits_mod / n_markers_mod, digits = 2),
          prop_gwas_top_ns_mod = round(n_gwas_top_ns_mod / n_markers_mod, digits = 2),
          prop_not_gwas_hits_mod = 1 - prop_gwas_hits_mod - prop_gwas_top_ns_mod,
-         sig_gwas_hyper = pval_gwas_hyper < 0.05) %>% 
+         sig_gwas_hyper = pval_gwas_hyper < 0.05) %>%
   select(mod, prop_gwas_hits_mod, prop_gwas_top_ns_mod, prop_not_gwas_hits_mod, sig_gwas_hyper) %>%
   arrange(prop_gwas_hits_mod, .by_group = TRUE) %>%
   pivot_longer(-c(meff_model, norm_method, minsize, pamStage, mod, sig_gwas_hyper),

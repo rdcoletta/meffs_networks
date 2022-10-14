@@ -146,24 +146,24 @@ net_stats <- data.frame(stringsAsFactors = FALSE)
 cat("analyzing signficant modules...\n")
 # test for enrichment of gwas hits in modules associated with the trait
 for (mod in unique(modules$module)) {
-  
+
   cat(paste0("  ", mod, " (", which(unique(modules$module) == mod), "/", length(unique(modules$module)), ")\n"))
-  
+
   # subset data
   mod_subset <- subset(modules, module == mod)
-  
+
   # network numbers
   n_markers_net <- nrow(modules)
   n_gwas_hits_net <- length(gwas_hits)
   n_gwas_top_ns_net <- length(gwas_top_non_sigs)
-  
+
   # module numbers
   n_markers_mod <- nrow(mod_subset)
   n_gwas_hits_mod <- sum(mod_subset$gwas_status == "gwas_hit")
   n_gwas_top_ns_mod <- sum(mod_subset$gwas_status == "gwas_top_non_sig")
   pval_trait_mod_cor <- unique(mod_subset$pval)
   sig_module <- pval_trait_mod_cor < 0.05
-  
+
   # run hypergeometric test on gwas hits
   pval_gwas_hyper <- phyper(q = n_gwas_hits_mod - 1,
                             m = n_gwas_hits_net,
@@ -176,7 +176,7 @@ for (mod in unique(modules$module)) {
                                    n = n_markers_net - n_gwas_top_ns_net,
                                    k = n_markers_mod,
                                    lower.tail = FALSE, log.p = FALSE)
-  
+
   # check effects of gwas hits across envs
   meff_gwas_plot <- filter(meff, marker %in% gwas_hits) %>%
     mutate(in_module = factor(if_else(marker %in% mod_subset$marker, true = TRUE, false = FALSE),
@@ -204,32 +204,32 @@ for (mod in unique(modules$module)) {
   # use try() function to not break code if module doesn't have an LD file
   # (grey modules may not have enough markers -- not subjected to minimum module size)
   ld_module <- try(fread(ld_module, header = TRUE, data.table = FALSE))
-  
+
   if (class(ld_module) != "try-error") {
-    
+
     # get ld stats
     ld_stats <- data.frame(t(as.numeric(summary(ld_module$R2)[2:5])), stringsAsFactors = FALSE)
     colnames(ld_stats) <- c("ld_Q1", "ld_median", "ld_mean", "ld_Q3")
-    
+
     # plot distribution r2 for all markers
     ld_dist_plot <- ggplot(ld_module, aes(x = R2)) +
       geom_histogram(color = "black", fill = mod) +
       labs(title = paste0("LD distribution of ", mod, " module")) +
       theme_bw()
-    
+
     # print(ld_dist_plot)
     ggsave(filename = paste0(output_folder, "/ld_dist.", mod, ".pdf"),
            plot = ld_dist_plot, device = "pdf", width = 6, height = 6)
-    
+
     # select markers in that module
     mod_markers <- modules[modules$module == mod & modules$source == type_connect_str, "marker"]
-    
+
     # get effects for markers in the module
     mod_meff <- meff[meff$marker %in% mod_markers, ]
     rownames(mod_meff) <- NULL
     mod_meff <- column_to_rownames(mod_meff, var = "marker")
     mod_meff <- t(mod_meff)
-    
+
     # calculate TOM for that module
     mod_TOM <- TOMsimilarityFromExpr(mod_meff, power = soft_threshold, TOMType = "unsigned")
     dimnames(mod_TOM) <- list(colnames(mod_meff), colnames(mod_meff))
@@ -238,26 +238,26 @@ for (mod in unique(modules$module)) {
                                         weighted = TRUE,
                                         threshold = edge_threshold,
                                         nodeNames = colnames(mod_meff))
-    
+
     # get edges of that module
     mod_edges <- data.frame(lapply(mod_TOM$edgeData, as.character), stringsAsFactors = FALSE)
     mod_edges$weight <- as.numeric(mod_edges$weight)
     # get ld between two markers in network
     mod_edges$R2 <- apply(mod_edges[, c("fromNode", "toNode")], MARGIN = 1, function(marker_pair, ld_module) {
-      
+
       r2_value <- ld_module[(ld_module$SNP_A == marker_pair["fromNode"] & ld_module$SNP_B == marker_pair["toNode"]) |
                               (ld_module$SNP_A == marker_pair["toNode"] & ld_module$SNP_B == marker_pair["fromNode"]), "R2"]
       if (length(r2_value) == 0) r2_value <- NA
-      
+
       return(r2_value)
-      
+
     }, ld_module = ld_module)
     # add categorical variable relating two markers --> are they in LD or not?
     mod_edges$LD <- ifelse(mod_edges$R2 > 0.9, yes = TRUE, no = FALSE)
-    
+
     # create network data
     mod_network <- network(mod_edges, directed = FALSE, matrix.type = "edgelist")
-    
+
     # get node names
     node_names <- get.vertex.attribute(mod_network, attrname = "vertex.names")
     # add kWithin to node attributes
@@ -272,11 +272,11 @@ for (mod in unique(modules$module)) {
     set.vertex.attribute(mod_network,
                          attrname = "gwas_status",
                          value = node_gwas_status$gwas_status)
-    
+
     # add vertex layout to network
     mod_network <- ggnetwork(mod_network, layout = "fruchtermanreingold", weights = "weight", cell.jitter = 0.5)
     # View(mod_network)
-    
+
     # visualize network by hub markers
     mod_network$gwas_status <- factor(mod_network$gwas_status,
                                       levels = c("gwas_hit", "gwas_top_non_sig", "not_gwas_hit"))
@@ -292,10 +292,10 @@ for (mod in unique(modules$module)) {
                              "gwas top non-sig hits - ", sum(mod_subset$gwas_status == "gwas_top_non_sig"), "/", length(gwas_top_non_sigs), " (",
                              "pval hyper: ", round(pval_gwas_top_ns_hyper, 3), ")\n")) +
       theme(plot.subtitle = element_text(color = "gray40"))
-    
+
     ggsave(filename = paste0(output_folder, "/mod_viz.", mod, ".by-hubs.pdf"),
            plot = plot_net_hub, device = "pdf", width = 10, height = 12)
-    
+
     # visualize network by LD status
     plot_net_ld <- ggplot(mod_network, aes(x = x, y = y, xend = xend, yend = yend)) +
       geom_edges(aes(color = LD)) +
@@ -306,18 +306,18 @@ for (mod in unique(modules$module)) {
            subtitle = paste0("(markers: ", nrow(mod_subset), "/", nrow(modules), " - ",
                              "gwas hits: ", sum(mod_subset$gwas_status == "gwas_hit"), "/", length(gwas_hits), " - ",
                              "pval hyper: ", round(pval_gwas_hyper, 3), ")"))
-    
+
     ggsave(filename = paste0(output_folder, "/mod_viz.", mod, ".by-ld.pdf"),
            plot = plot_net_ld, device = "pdf", width = 10, height = 12)
-    
+
   } else {
-    
+
     # set ld stats to NA
     ld_stats <- data.frame(ld_Q1 = NA, ld_median = NA, ld_mean = NA, ld_Q3 = NA,
                            stringsAsFactors = FALSE)
-    
+
   }
-  
+
   # add module numbers to final df
   mod_stats <- data.frame(mod = mod,
                           n_markers_mod = n_markers_mod,
@@ -329,9 +329,9 @@ for (mod in unique(modules$module)) {
                           pval_gwas_top_ns_hyper = pval_gwas_top_ns_hyper,
                           ld_stats,
                           stringsAsFactors = FALSE)
-  
+
   net_stats <- rbind(net_stats, mod_stats)
-  
+
 }
 
 # write file
