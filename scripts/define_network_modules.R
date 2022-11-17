@@ -33,12 +33,12 @@ optional argument:
 }
 
 getArgValue <- function(arg) {
-  
+
   # get value from command-line arguments
   arg <- unlist(strsplit(arg, "="))
   if (length(arg) == 1) return(TRUE)
   if (length(arg) > 1) return(arg[2])
-  
+
 }
 
 
@@ -64,12 +64,12 @@ pos_args <- 2
 if (length(args) < pos_args) stop(usage(), "missing positional argument(s)")
 
 if (length(args) > pos_args) {
-  
+
   opt_args <- args[-1:-pos_args]
   opt_args_allowed <- c("--min-mod-size", "--ME-diss-threshold", "--soft-threshold", "--pamStage")
   opt_args_requested <- as.character(sapply(opt_args, function(x) unlist(strsplit(x, split = "="))[1]))
   if (any(!opt_args_requested %in% opt_args_allowed)) stop(usage(), "wrong optional argument(s)")
-  
+
   # change default based on the argument provided
   for (argument in opt_args_allowed) {
     if (any(grepl(argument, opt_args_requested))) {
@@ -78,7 +78,7 @@ if (length(args) > pos_args) {
       assign(arg_name, arg_value)
     }
   }
-  
+
 }
 
 # make sure optional arguments are valid
@@ -92,7 +92,7 @@ if (suppressWarnings(!is.na(as.numeric(ME_diss_threshold)))) {
   ME_diss_threshold <- as.numeric(ME_diss_threshold)
 } else {
   if (ME_diss_threshold < 0 | ME_diss_threshold > 1) {
-    stop("Optional argument '--ME-diss-threshold' should be a number between 0 and 1") 
+    stop("Optional argument '--ME-diss-threshold' should be a number between 0 and 1")
   }
 }
 
@@ -210,13 +210,13 @@ cat("making TOM plot...\n")
 moduleColorsFilter <- (moduleColors != "grey")
 # calculate dissTOM again
 dissTOMfilter  <- 1 - TOMsimilarityFromExpr(marker_effects[, moduleColorsFilter], power = soft_threshold)
-# redo hierarchical clustering 
+# redo hierarchical clustering
 hierFilter <- hclust(as.dist(dissTOMfilter), method = "average" )
 # set up diagonals to NA
 diag(dissTOMfilter) <- NA
 # plot
-bitmap(file = paste0(output_folder, "/TOM-diss_plot.png"), type = "png16m", res = 300)
-TOMplot(dissTOMfilter ^ 4, hierFilter, as.character(moduleColors[moduleColorsFilter]),
+bitmap(file = paste0(output_folder, "/TOM-diss_plot.png"), type = "png16m", res = 600)
+TOMplot(dissTOMfilter ^ 7, hierFilter, as.character(moduleColors[moduleColorsFilter]),
         main = "TOM heatmap plot, module genes" )
 dev.off()
 
