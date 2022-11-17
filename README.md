@@ -57,6 +57,20 @@ cp genomic_prediction/hybrids/data/1stStage_BLUEs.*-per-env.txt marker-effects_n
 cd ~/projects/marker-effects_networks
 ```
 
+Total number of hybrids evaluated per environment:
+
+| env      | hybrids |
+| -------- | ------- |
+| BEC-BL19 | 367     |
+| BEC-BL20 | 398     |
+| BEC-EP20 | 399     |
+| COR19    | 370     |
+| COR20    | 364     |
+| MIN19    | 356     |
+| MIN20    | 383     |
+| SYN19    | 361     |
+| SYN20    | 397     |
+| URB19    | 371     |
 
 
 
@@ -78,9 +92,11 @@ done
 # plot results for qc
 module load R/3.6.0
 Rscript scripts/plot_marker_effects.R analysis/marker_effects \
+                                      analysis/marker_effects/qc \
                                       --traits=EHT,Moisture,PHT,TWT,YLD \
                                       --models=rrblup,bayescpi,mrr,gwas
 Rscript scripts/plot_marker_effects.R analysis/marker_effects \
+                                      analysis/marker_effects/qc_no-missing-genos \
                                       --traits=EHT,Moisture,PHT,TWT,YLD \
                                       --models=rrblup,bayescpi,mrr,gwas \
                                       --no-missing-genotypes
@@ -739,6 +755,8 @@ for idx_type in means intervals pca fw; do
   # define p-values
   if [[ ${idx_type} == "means" ]]; then
     PVAL=0.1
+  elif [[ ${idx_type} == "intervals" ]]; then
+    PVAL=0.01
   else
     PVAL=0.05
   fi
