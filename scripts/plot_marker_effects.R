@@ -12,6 +12,7 @@ usage: Rscript plot_marker_effects.R [results_folder] [...]
 
 positional arguments:
   results_folder              folder with results of marker effects
+  outfolder                   folder to save plots
 
 optional argument:
   --help                      show this helpful message
@@ -42,6 +43,8 @@ if ("--help" %in% args) usage() & q(save = "no")
 
 # get positional arguments
 results_folder <- args[1]
+outfolder <- args[2]
+if (!dir.exists(outfolder)) dir.create(outfolder, recursive = TRUE)
 
 # set default of optional args
 traits <- "EHT,Moisture,PHT,TWT,YLD"
@@ -49,7 +52,7 @@ models <- "rrblup,bayescpi,mrr,gwas"
 no_missing_genotypes <- FALSE
 
 # assert to have the correct optional arguments
-pos_args <- 1
+pos_args <- 2
 if (length(args) < pos_args) stop(usage(), "missing positional argument(s)")
 
 if (length(args) > pos_args) {
@@ -83,11 +86,7 @@ for (trait in traits) {
   cat(trait, "\n", sep = "")
   
   # create plots folder
-  if (no_missing_genotypes) {
-    plots_folder <- paste0(results_folder, "/", trait, "/plots_no-missing-genos")
-  } else {
-    plots_folder <- paste0(results_folder, "/", trait, "/plots")
-  }
+  plots_folder <- paste0(outfolder, "/", trait)
   if (!dir.exists(plots_folder)) dir.create(plots_folder)
   
   # create empty data frames to store results across models
