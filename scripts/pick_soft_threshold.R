@@ -32,12 +32,12 @@ optional argument:
 }
 
 getArgValue <- function(arg) {
-  
+
   # get value from command-line arguments
   arg <- unlist(strsplit(arg, "="))
   if (length(arg) == 1) return(TRUE)
   if (length(arg) > 1) return(arg[2])
-  
+
 }
 
 
@@ -63,12 +63,12 @@ pos_args <- 3
 if (length(args) < pos_args) stop(usage(), "missing positional argument(s)")
 
 if (length(args) > pos_args) {
-  
+
   opt_args <- args[-1:-pos_args]
   opt_args_allowed <- c("--norm-method", "--cv-threshold", "--debug")
   opt_args_requested <- as.character(sapply(opt_args, function(x) unlist(strsplit(x, split = "="))[1]))
   if (any(!opt_args_requested %in% opt_args_allowed)) stop(usage(), "wrong optional argument(s)")
-  
+
   # change default based on the argument provided
   for (argument in opt_args_allowed) {
     if (any(grepl(argument, opt_args_requested))) {
@@ -77,7 +77,7 @@ if (length(args) > pos_args) {
       assign(arg_name, arg_value)
     }
   }
-  
+
 }
 
 # make sure optional arguments are valid
@@ -119,14 +119,14 @@ if (debug) {
   marker_info <- marker_info[match(rownames(marker_effects), rownames(marker_info)), ]
 }
 
-# normalize marker effects 
+# normalize marker effects
 if (norm_method == "minmax") {
   # get max and min values of the data
   max <- max(as.matrix(marker_effects))
   min <- min(as.matrix(marker_effects))
   # normalize data
   marker_effects <- data.frame(apply(marker_effects, MARGIN = c(1,2), function(x) (x - min)/(max - min)))
-  rm(max, min) 
+  rm(max, min)
 }
 if (norm_method == "zscore") {
   # get mean and sd values of the data
@@ -155,7 +155,7 @@ cat("removed ", n_markers_removed, " markers (", round((n_markers_removed / NROW
     "%) with CV < ", cv_threshold, "\n", sep = "")
 # remove markers with low CV
 marker_effects <- marker_effects[high_cv_markers, ]
-rm(markers_cv, cv_threshold, high_cv_markers, n_markers_removed)
+rm(markers_cv, high_cv_markers, n_markers_removed)
 
 # match gene/sample orders
 marker_order <- intersect(rownames(marker_info), rownames(marker_effects))
@@ -192,7 +192,7 @@ marker_effects <- marker_effects[, marker_order]
 # cluster the samples (in contrast to clustering genes that will come later) to see if there
 # are any obvious outliers
 sample_tree <- hclust(dist(marker_effects), method = "average")
-pdf(file = paste0(output_folder, "/sample_clustering.pdf"), width = 12, height = 9)
+pdf(file = paste0(output_folder, "/sample_clustering.cv-",  cv_threshold, ".pdf"), width = 12, height = 9)
 par(cex = 0.6)
 par(mar = c(0,4,2,0))
 plot(sample_tree, main = "Sample clustering to detect outliers", sub="", xlab="", cex.lab = 1.5,
@@ -212,7 +212,7 @@ powers <- c(c(1:10), seq(from = 12, to = 30, by = 2))
 sft <- pickSoftThreshold(marker_effects, powerVector = powers, verbose = 5)
 
 # Plot the results
-pdf(file = paste0(output_folder, "/scale-free_topology_fit_index.pdf"), width = 9, height = 5)
+pdf(file = paste0(output_folder, "/scale-free_topology_fit_index.cv-",  cv_threshold, ".pdf"), width = 9, height = 5)
 par(mfrow = c(1, 2))
 cex1 <- 0.9
 # Scale-free topology fit index as a function of the soft-thresholding power
