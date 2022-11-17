@@ -26,12 +26,12 @@ optional argument:
 
 
 getArgValue <- function(arg) {
-  
+
   # get value from command-line arguments
   arg <- unlist(strsplit(arg, "="))
   if (length(arg) == 1) return(TRUE)
   if (length(arg) > 1) return(arg[2])
-  
+
 }
 
 #### command line options ----
@@ -52,12 +52,12 @@ pamStage <- "on,off"
 if (length(args) < 1) stop(usage(), "missing positional argument(s)")
 
 if (length(args) > 1) {
-  
+
   opt_args <- args[-1]
   opt_args_allowed <- c("--meff-model", "--norm-method", "--minsize", "--pamStage")
   opt_args_requested <- as.character(sapply(opt_args, function(x) unlist(strsplit(x, split = "="))[1]))
   if (any(!opt_args_requested %in% opt_args_allowed)) stop(usage(), "wrong optional argument(s)")
-  
+
   # change default based on the argument provided
   for (argument in opt_args_allowed) {
     if (any(grepl(argument, opt_args_requested))) {
@@ -66,7 +66,7 @@ if (length(args) > 1) {
       assign(arg_name, arg_value)
     }
   }
-  
+
 }
 
 # adjust format from optional arguments
@@ -86,15 +86,15 @@ for (model in meff_model) {
   for (norm in norm_method) {
     for (size in minsize) {
       for (pam in pamStage) {
-        
+
         # get folder with qc results for a network setting
         folder_qc <- paste0(folder_base, "/meff_", model, "/norm_", norm,
                                 "/min_mod_size_", size, "/pamStage_", pam)
-        
+
         # get results
         network_qc <- paste0(folder_qc, "/kDiff_per_module.txt")
         network_qc <- try(fread(network_qc, header = TRUE, data.table = FALSE))
-        
+
         if (class(network_qc) != "try-error") {
           # add network settings
           network_qc <- data.frame(meff_model = model, norm_method = norm,
@@ -103,7 +103,7 @@ for (model in meff_model) {
           # get accuracy results
           qc_results <- rbind(qc_results, network_qc)
         }
-        
+
       }
     }
   }
@@ -118,14 +118,14 @@ output_folder <- paste0(folder_base, "/qc_networks")
 if (!dir.exists(output_folder)) dir.create(output_folder, recursive = TRUE)
 
 # number of markers per network
-plot1 <- qc_results %>% 
-  filter(source == "TOM") %>% 
-  group_by(meff_model, norm_method, minsize, pamStage) %>% 
-  summarize(n_markers = n()) %>% 
-  ungroup() %>% 
-  group_by(meff_model, norm_method) %>% 
-  summarize(n_markers = mean(n_markers)) %>% 
-  ungroup() %>% 
+plot1 <- qc_results %>%
+  filter(source == "TOM") %>%
+  group_by(meff_model, norm_method, minsize, pamStage) %>%
+  summarize(n_markers = n()) %>%
+  ungroup() %>%
+  group_by(meff_model, norm_method) %>%
+  summarize(n_markers = mean(n_markers)) %>%
+  ungroup() %>%
   ggplot() +
   geom_col(aes(x = paste(meff_model, norm_method, sep = "_"), y = n_markers)) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
@@ -136,11 +136,11 @@ ggsave(plot = plot1, filename = paste0(output_folder, "/n_markers.pdf"),
        device = "pdf", width = 8, height = 6)
 
 # number of markers per module - with grey module
-plot2 <- qc_results %>% 
-  filter(source == "TOM") %>% 
-  group_by(meff_model, norm_method, minsize, pamStage, source, module) %>% 
-  summarize(n_markers = n()) %>% 
-  ungroup() %>% 
+plot2 <- qc_results %>%
+  filter(source == "TOM") %>%
+  group_by(meff_model, norm_method, minsize, pamStage, source, module) %>%
+  summarize(n_markers = n()) %>%
+  ungroup() %>%
   ggplot() +
   facet_grid2(meff_model + norm_method ~ minsize + pamStage, scales = "free_y", independent = "y") +
   geom_histogram(aes(x = n_markers), binwidth = 50) +
@@ -151,11 +151,11 @@ ggsave(plot = plot2, filename = paste0(output_folder, "/dist_markers.pdf"),
        device = "pdf", width = 12, height = 6)
 
 # number of markers per module - without grey module
-plot3 <- qc_results %>% 
-  filter(source == "TOM", module != "grey") %>% 
-  group_by(meff_model, norm_method, minsize, pamStage, source, module) %>% 
-  summarize(n_markers = n()) %>% 
-  ungroup() %>% 
+plot3 <- qc_results %>%
+  filter(source == "TOM", module != "grey") %>%
+  group_by(meff_model, norm_method, minsize, pamStage, source, module) %>%
+  summarize(n_markers = n()) %>%
+  ungroup() %>%
   ggplot() +
   facet_grid2(meff_model + norm_method ~ minsize + pamStage, scales = "free_y", independent = "y") +
   geom_histogram(aes(x = n_markers), binwidth = 50) +
@@ -196,17 +196,17 @@ ggsave(plot = plot7, filename = paste0(output_folder, "/dist_clusterCoeff.pdf"),
        device = "pdf", width = 10, height = 6)
 
 # plot average median kDiff
-plot8 <- qc_results %>% 
-  group_by(meff_model, norm_method, minsize, pamStage, source, module) %>% 
+plot8 <- qc_results %>%
+  group_by(meff_model, norm_method, minsize, pamStage, source, module) %>%
   summarize(n_markers = n(),
-            median = median(kDiff)) %>% 
+            median = median(kDiff)) %>%
   ungroup() %>%
-  group_by(meff_model, norm_method, minsize, pamStage, source) %>% 
+  group_by(meff_model, norm_method, minsize, pamStage, source) %>%
   summarize(n_mods = n(),
             n_markers = sum(n_markers),
             avg_median = mean(median, na.rm = TRUE),
             se_median = sd(median, na.rm = TRUE) / sqrt(n_mods)) %>%
-  ungroup() %>% 
+  ungroup() %>%
   ggplot() +
   facet_grid2(meff_model + norm_method ~ minsize + pamStage) +
   geom_col(aes(x = source, y = avg_median, fill = source), show.legend = FALSE) +
@@ -217,17 +217,17 @@ plot8 <- qc_results %>%
 ggsave(plot = plot8, filename = paste0(output_folder, "/avg_median_kDiff.pdf"),
        device = "pdf", width = 10, height = 6)
 
-plot9 <- qc_results %>% 
-  group_by(meff_model, norm_method, minsize, pamStage, source, module) %>% 
+plot9 <- qc_results %>%
+  group_by(meff_model, norm_method, minsize, pamStage, source, module) %>%
   summarize(n_markers = n(),
-            median = median(clusterCoeff)) %>% 
+            median = median(clusterCoeff)) %>%
   ungroup() %>%
-  group_by(meff_model, norm_method, minsize, pamStage, source) %>% 
+  group_by(meff_model, norm_method, minsize, pamStage, source) %>%
   summarize(n_mods = n(),
             n_markers = sum(n_markers),
             avg_median = mean(median, na.rm = TRUE),
             se_median = sd(median, na.rm = TRUE) / sqrt(n_mods)) %>%
-  ungroup() %>% 
+  ungroup() %>%
   ggplot() +
   facet_grid2(meff_model + norm_method ~ minsize + pamStage) +
   geom_col(aes(x = source, y = avg_median, fill = source), show.legend = FALSE) +
@@ -238,17 +238,17 @@ plot9 <- qc_results %>%
 ggsave(plot = plot9, filename = paste0(output_folder, "/avg_median_clusterCoeff.pdf"),
        device = "pdf", width = 10, height = 6)
 
-plot10 <- qc_results %>% 
-  group_by(meff_model, norm_method, minsize, pamStage, source, module) %>% 
+plot10 <- qc_results %>%
+  group_by(meff_model, norm_method, minsize, pamStage, source, module) %>%
   summarize(n_markers = n(),
-            prop_pos_kDiff = round(sum(kDiff > 0) / n_markers, digits = 2)) %>% 
+            prop_pos_kDiff = round(sum(kDiff > 0) / n_markers, digits = 2)) %>%
   ungroup() %>%
-  group_by(meff_model, norm_method, minsize, pamStage, source) %>% 
+  group_by(meff_model, norm_method, minsize, pamStage, source) %>%
   summarize(n_mods = n(),
             n_markers = sum(n_markers),
             avg_prop_pos_kDiff = mean(prop_pos_kDiff, na.rm = TRUE),
             se_prop_pos_kDiff = sd(prop_pos_kDiff, na.rm = TRUE) / sqrt(n_mods)) %>%
-  ungroup() %>% 
+  ungroup() %>%
   ggplot() +
   facet_grid2(meff_model + norm_method ~ minsize + pamStage, scales = "free_x", independent = "x") +
   geom_col(aes(x = source, y = avg_prop_pos_kDiff, fill = source), show.legend = FALSE) +
@@ -260,17 +260,17 @@ ggsave(plot = plot10, filename = paste0(output_folder, "/avg_prop_pos_kDiff.pdf"
        device = "pdf", width = 10, height = 6)
 
 # average stats per type network setting
-plot11 <- qc_results %>% 
-  group_by(meff_model, norm_method, minsize, pamStage, source, module) %>% 
+plot11 <- qc_results %>%
+  group_by(meff_model, norm_method, minsize, pamStage, source, module) %>%
   summarize(n_markers = n(),
-            median = median(kDiff)) %>% 
+            median = median(kDiff)) %>%
   ungroup() %>%
-  group_by(pamStage, source) %>% 
+  group_by(pamStage, source) %>%
   summarize(n_mods = n(),
             n_markers = sum(n_markers),
             avg_median = mean(median, na.rm = TRUE),
             se_median = sd(median, na.rm = TRUE) / sqrt(n_mods)) %>%
-  ungroup() %>% 
+  ungroup() %>%
   ggplot() +
   facet_grid2(~ pamStage, scales = "free_x", independent = "x") +
   geom_col(aes(x = source, y = avg_median)) +
@@ -281,17 +281,17 @@ plot11 <- qc_results %>%
 ggsave(plot = plot11, filename = paste0(output_folder, "/avg_median_kDiff.per-pamStage.pdf"),
        device = "pdf", width = 8, height = 6)
 
-plot12 <- qc_results %>% 
-  group_by(meff_model, norm_method, minsize, pamStage, source, module) %>% 
+plot12 <- qc_results %>%
+  group_by(meff_model, norm_method, minsize, pamStage, source, module) %>%
   summarize(n_markers = n(),
-            median = median(kDiff)) %>% 
+            median = median(kDiff)) %>%
   ungroup() %>%
-  group_by(minsize, source) %>% 
+  group_by(minsize, source) %>%
   summarize(n_mods = n(),
             n_markers = sum(n_markers),
             avg_median = mean(median, na.rm = TRUE),
             se_median = sd(median, na.rm = TRUE) / sqrt(n_mods)) %>%
-  ungroup() %>% 
+  ungroup() %>%
   ggplot() +
   facet_grid2(~ minsize, scales = "free_x", independent = "x") +
   geom_col(aes(x = source, y = avg_median)) +
@@ -302,17 +302,17 @@ plot12 <- qc_results %>%
 ggsave(plot = plot12, filename = paste0(output_folder, "/avg_median_kDiff.per-minsize.pdf"),
        device = "pdf", width = 8, height = 6)
 
-plot13 <- qc_results %>% 
-  group_by(meff_model, norm_method, minsize, pamStage, source, module) %>% 
+plot13 <- qc_results %>%
+  group_by(meff_model, norm_method, minsize, pamStage, source, module) %>%
   summarize(n_markers = n(),
-            median = median(kDiff)) %>% 
+            median = median(kDiff)) %>%
   ungroup() %>%
-  group_by(norm_method, source) %>% 
+  group_by(norm_method, source) %>%
   summarize(n_mods = n(),
             n_markers = sum(n_markers),
             avg_median = mean(median, na.rm = TRUE),
             se_median = sd(median, na.rm = TRUE) / sqrt(n_mods)) %>%
-  ungroup() %>% 
+  ungroup() %>%
   ggplot() +
   facet_grid2(~ norm_method, scales = "free_x", independent = "x") +
   geom_col(aes(x = source, y = avg_median)) +
@@ -323,17 +323,17 @@ plot13 <- qc_results %>%
 ggsave(plot = plot13, filename = paste0(output_folder, "/avg_median_kDiff.per-norm_method.pdf"),
        device = "pdf", width = 8, height = 6)
 
-plot14 <- qc_results %>% 
-  group_by(meff_model, norm_method, minsize, pamStage, source, module) %>% 
+plot14 <- qc_results %>%
+  group_by(meff_model, norm_method, minsize, pamStage, source, module) %>%
   summarize(n_markers = n(),
-            median = median(kDiff)) %>% 
+            median = median(kDiff)) %>%
   ungroup() %>%
-  group_by(meff_model, source) %>% 
+  group_by(meff_model, source) %>%
   summarize(n_mods = n(),
             n_markers = sum(n_markers),
             avg_median = mean(median, na.rm = TRUE),
             se_median = sd(median, na.rm = TRUE) / sqrt(n_mods)) %>%
-  ungroup() %>% 
+  ungroup() %>%
   ggplot() +
   facet_grid2(~ meff_model, scales = "free_x", independent = "x") +
   geom_col(aes(x = source, y = avg_median)) +
@@ -343,6 +343,74 @@ plot14 <- qc_results %>%
 
 ggsave(plot = plot14, filename = paste0(output_folder, "/avg_median_kDiff.per-meff_model.pdf"),
        device = "pdf", width = 8, height = 6)
+
+# plot all kDiff and kRatio (kDiff/kTotal)
+qc_results$kRatio <- round(qc_results$kDiff / qc_results$kTotal, digits = 2)
+qc_results$module <- factor(qc_results$module)
+
+plot15 <- qc_results %>%
+  filter(source == "TOM") %>%
+  mutate(module = factor(module)) %>%
+  ggplot() +
+  facet_grid2(meff_model + norm_method ~ minsize + pamStage, scales = "free_x", independent = "x") +
+  geom_boxplot(aes(x = module, y = kDiff, fill = module), outlier.size = 0.25, show.legend = FALSE) +
+  # geom_violin(aes(x = module, y = kDiff, fill = module), show.legend = FALSE) +
+  scale_fill_manual(values = levels(qc_results$module)) +
+  labs(title = "kDiff per network", subtitle = "(TOM matrix)") +
+  geom_hline(yintercept = 0, color = "black") +
+  theme_bw() +
+  theme(panel.grid.minor =  element_blank(),
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 5))
+ggsave(plot = plot15, filename = paste0(output_folder, "/kDiff_per_network.TOM.pdf"),
+       device = "pdf", width = 28, height = 12)
+
+plot16 <- qc_results %>%
+  filter(source == "TOM") %>%
+  mutate(module = factor(module)) %>%
+  ggplot() +
+  facet_grid2(meff_model + norm_method ~ minsize + pamStage, scales = "free_x", independent = "x") +
+  geom_boxplot(aes(x = module, y = kRatio, fill = module), outlier.size = 0.25, show.legend = FALSE) +
+  # geom_violin(aes(x = module, y = kRatio, fill = module), show.legend = FALSE) +
+  scale_fill_manual(values = levels(qc_results$module)) +
+  labs(title = "kRatio per network", subtitle = "(TOM matrix)") +
+  geom_hline(yintercept = 0, color = "black") +
+  theme_bw() +
+  theme(panel.grid.minor =  element_blank(),
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 5))
+ggsave(plot = plot16, filename = paste0(output_folder, "/kRatio_per_network.TOM.pdf"),
+       device = "pdf", width = 28, height = 12)
+
+plot17 <- qc_results %>%
+  filter(source == "adjacency") %>%
+  mutate(module = factor(module)) %>%
+  ggplot() +
+  facet_grid2(meff_model + norm_method ~ minsize + pamStage, scales = "free_x", independent = "x") +
+  geom_boxplot(aes(x = module, y = kDiff, fill = module), outlier.size = 0.25, show.legend = FALSE) +
+  # geom_violin(aes(x = module, y = kDiff, fill = module), show.legend = FALSE) +
+  scale_fill_manual(values = levels(qc_results$module)) +
+  labs(title = "kDiff per network", subtitle = "(adjacency matrix)") +
+  geom_hline(yintercept = 0, color = "black") +
+  theme_bw() +
+  theme(panel.grid.minor =  element_blank(),
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 5))
+ggsave(plot = plot17, filename = paste0(output_folder, "/kDiff_per_network.adjacency.pdf"),
+       device = "pdf", width = 28, height = 12)
+
+plot18 <- qc_results %>%
+  filter(source == "adjacency") %>%
+  mutate(module = factor(module)) %>%
+  ggplot() +
+  facet_grid2(meff_model + norm_method ~ minsize + pamStage, scales = "free_x", independent = "x") +
+  geom_boxplot(aes(x = module, y = kRatio, fill = module), outlier.size = 0.25, show.legend = FALSE) +
+  # geom_violin(aes(x = module, y = kRatio, fill = module), show.legend = FALSE) +
+  scale_fill_manual(values = levels(qc_results$module)) +
+  labs(title = "kRatio per network", subtitle = "(adjacency matrix)") +
+  geom_hline(yintercept = 0, color = "black") +
+  theme_bw() +
+  theme(panel.grid.minor =  element_blank(),
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 5))
+ggsave(plot = plot18, filename = paste0(output_folder, "/kRatio_per_network.adjacency.pdf"),
+       device = "pdf", width = 28, height = 12)
 
 
 
