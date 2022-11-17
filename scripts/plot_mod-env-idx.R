@@ -120,13 +120,17 @@ for (row in 1:nrow(mod_env_idx_cor)) {
   # get environments to keep
   envs_to_keep <- unique(MEs$env)
   
-  # get env idx results 
+  # get env idx results
   env_idx_net <- subset(env_idx, env %in% envs_to_keep & covariable == mod_env_idx_cor[row, "env_idx"]) %>% 
-    rename(type = "covariable") %>%
-    select(env, type, value)
+    rename(type = "covariable")
+  
+  if ("intervals" %in% colnames(env_idx_net)) {
+    env_idx_net <- subset(env_idx_net, intervals == mod_env_idx_cor[row, "interval"]) %>% 
+      unite(type:intervals, col = "type")
+  }
   
   # plot ME and env idx in their own scales
-  plot_mod_env_idx <- rbind(MEs, env_idx_net) %>%  
+  plot_mod_env_idx <- rbind(MEs, env_idx_net) %>%
     ggplot(aes(x = env, y = value, color = type)) +
     geom_line(aes(group = type), show.legend = FALSE) +
     facet_wrap(~ type, nrow = 2, scales = "free_y") +
@@ -139,8 +143,8 @@ for (row in 1:nrow(mod_env_idx_cor)) {
     theme_bw() +
     theme(panel.grid.minor = element_blank())
   
-  ggsave(plot_mod_env_idx, filename = paste0(output_folder, "/", paste0(mod_env_idx_cor[row, 1:6], collapse = "_"), ".pdf"),
-         device = "pdf", height = 10, width = 12)
+  outfile_name <- paste0(output_folder, "/", paste0(mod_env_idx_cor[row, 1:4], collapse = "_"), "_", unique(MEs$type), "_", unique(env_idx_net$type), ".pdf")
+  ggsave(plot_mod_env_idx, filename = outfile_name, device = "pdf", height = 10, width = 12)
   
   # normalize to same scale
   MEs$value <- sapply(MEs$value, function(x) (x - min(MEs$value))/(max(MEs$value) - min(MEs$value)))
@@ -160,8 +164,8 @@ for (row in 1:nrow(mod_env_idx_cor)) {
     theme_bw() +
     theme(panel.grid.minor = element_blank())
   
-  ggsave(plot_mod_env_idx_norm, filename = paste0(output_folder, "/", paste0(mod_env_idx_cor[row, 1:6], collapse = "_"), ".norm.pdf"),
-         device = "pdf", height = 10, width = 12)
+  outfile_name_norm <- paste0(output_folder, "/", paste0(mod_env_idx_cor[row, 1:4], collapse = "_"), "_", unique(MEs$type), "_", unique(env_idx_net$type), ".norm.pdf")
+  ggsave(plot_mod_env_idx_norm, filename = outfile_name_norm, device = "pdf", height = 10, width = 12)
   
 }
 
@@ -170,9 +174,9 @@ for (row in 1:nrow(mod_env_idx_cor)) {
 #### debug ----
 
 # folder_base <- "analysis/networks/YLD"
-# # mod_env_idx_cor_file <- "analysis/networks/YLD/module-env-idx_per_network.pca.txt"
-# mod_env_idx_cor_file <- "analysis/networks/YLD/module-env-idx_per_network.means.txt"
-# # env_idx_file <- "data/env_covariables/env_idx.txt"
-# env_idx_file <- "data/env_covariables/env_covariables_means.txt"
+# mod_env_idx_cor_file <- "analysis/networks/YLD/module-env-idx_per_network.pca.txt"
+# # mod_env_idx_cor_file <- "analysis/networks/YLD/module-env-idx_per_network.intervals.txt"
+# env_idx_file <- "data/env_covariables/pca_env_idx.txt"
+# # env_idx_file <- "data/env_covariables/env_covariables_means_per_intervals.txt"
 # output_folder <- "analysis/networks/YLD/plots_mod-env-idx"
 # p_value <- 0.05
