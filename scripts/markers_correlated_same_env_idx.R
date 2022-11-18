@@ -121,7 +121,7 @@ for (idx in names(mod_env_idx_cor_split)) {
       # get markers in module for a specific network
       network_mod_markers <- paste0(folder_base, "/meff_", model, "/norm_", norm,
                                     "/min_mod_size_", size, "/pamStage_", pam,
-                                    "/kDiff_per_module.gwas-status.txt")
+                                    "/kDiff_per_module.txt")
       network_mod_markers <- fread(network_mod_markers, header = TRUE, data.table = FALSE)
       network_mod_markers <- network_mod_markers[network_mod_markers$source == "TOM", c("module", "marker")]
       network_mod_markers <- network_mod_markers[network_mod_markers$module == module, ]
@@ -148,7 +148,7 @@ for (idx in names(mod_env_idx_cor_split)) {
     if (length(list_markers_mod_idx) > 1) {
 
       # plot intersections of markers
-      upset_plot <- upset(fromList(list_markers_mod_idx), order.by = "freq", mb.ratio = c(0.55, 0.45))
+      upset_plot <- upset(fromList(list_markers_mod_idx), order.by = "freq", mb.ratio = c(0.55, 0.45), nsets = 100)
       pdf(file = paste0(output_folder, "/markers_cor_", idx, ".pdf"), onefile = FALSE, width = 12, height = 10)
       print(upset_plot)
       dev.off()
@@ -162,7 +162,7 @@ for (idx in names(mod_env_idx_cor_split)) {
 #### debug ----
 
 # folder_base <- "analysis/networks/YLD"
-# # mod_env_idx_cor_file <- "analysis/networks/YLD/module-env-idx_per_network.pca.txt"
-# mod_env_idx_cor_file <- "analysis/networks/YLD/module-env-idx_per_network.per-intervals.txt"
+# mod_env_idx_cor_file <- "analysis/networks/YLD/module-env-idx_per_network.pca.txt"
+# # mod_env_idx_cor_file <- "analysis/networks/YLD/module-env-idx_per_network.per-intervals.txt"
 # output_folder <- "analysis/networks/YLD/plots_mod-env-idx"
-# p_value <- 0.05
+# p_value <- 0.1
