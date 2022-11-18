@@ -142,6 +142,22 @@ ggsave(filename = paste0(output_folder, "/env_weather_data_summary.pdf"),
 # plot_panel(ET, title = 'Panel of Environmental Types')
 # dev.off()
 
+# remove downloaded temp files
+unlink("USA*_msk_alt.*")
+
+# plot cumulative GDDs for each environment
+gdd_plot <- env_data %>%
+  select(env, daysFromStart, GDD) %>%
+  group_by(env) %>%
+  mutate(GDD = cumsum(GDD)) %>%
+  ungroup() %>%
+  pivot_longer(-c(env, daysFromStart), names_to = "idx", values_to = "values") %>%
+  ggplot() +
+  geom_line(aes(x = daysFromStart, y = values, color = env)) +
+  labs(y = "cumulative_GDD")
+ggsave(filename = paste0(output_folder, "/GDDs_per_env.pdf"),
+       plot = gdd_plot, device = "pdf")
+
 
 
 #### get environmental covariables means ----
@@ -175,10 +191,15 @@ fwrite(EC, file = paste0(output_folder, "/env_covariables_means.txt"),
 
 #### get environmental covariables per intervals ----
 
+# define interval window based on latest day present in all environments
+n_envs_per_day <- split(env_data[, c("env", "daysFromStart")], env_data[, "daysFromStart"])
+n_envs_per_day <- sapply(n_envs_per_day, nrow)
+max_date <- max(which(n_envs_per_day == max(n_envs_per_day)))
+
 # get EC
 EC_intervals <- W_matrix(env.data = env_data, env.id = 'env', var.id = env_vars,
                          statistic = "mean", by.interval = TRUE,
-                         time.window = seq(0, 210, by = interval_window))
+                         time.window = seq(0, max_date, by = interval_window))
 # pdf(file = paste0(output_folder, "/env_covariables_panel_per_intervals.pdf"))
 # plot_panel(EC_intervals, title = 'Panel of Environmental Covariables')
 # dev.off()
@@ -207,6 +228,7 @@ fwrite(EC_intervals, file = paste0(output_folder, "/env_covariables_means_per_in
 
 #### debug ----
 
-# coords_filename <- "data/env_sites_coord.csv"
+# coords_filename <- "data/env_sites_coord.TEST.csv"
 # output_folder <- "data/env_covariables"
 # country <- "USA"
+# interval_window <- 3
