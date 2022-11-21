@@ -5,18 +5,23 @@ library(UpSetR)
 
 usage <- function() {
   cat("
-description: check markers in modules that are correlated to the same env idx..
+description: check markers in modules that are correlated to the same env idx while considering LD among them.
 
-usage: Rscript markers_correlated_same_env_idx.R [folder_base] [mod_env_idx_cor_file] [output_folder] [...]
+usage: Rscript markers_correlated_same_env_idx.R [folder_base] [mod_env_idx_cor_file] [geno_data] [output_folder] [...]
 
 positional arguments:
   folder_base                 path to folder with results of module-env idx relationship
   mod_env_idx_cor_file        file with correlations between module and principal components
+  geno_data                   hapmap file to calculate LD among markers
   output_folder               folder to output plots
 
 optional argument:
   --help                      show this helpful message
   --p-value=VALUE             p-value threshold to filter correlations (default: 0.05)
+  --tassel-path=PATH          absolute path to TASSEL 5
+                              (default: '/home/hirschc1/della028/software/tassel-5-standalone') 
+  --plink-path=PATH           absolute path to PLINK 1.9
+                              (default: '/home/hirschc1/della028/software/plink_linux_x86_64_20200219') 
 
 
 "
@@ -42,20 +47,23 @@ if ("--help" %in% args) usage() & q(save = "no")
 # get positional arguments
 folder_base <- args[1]
 mod_env_idx_cor_file <- args[2]
-output_folder <- args[3]
+geno_data <- args[3]
+output_folder <- args[4]
 if (!dir.exists(output_folder)) dir.create(output_folder, recursive = TRUE)
 
 # set default
 p_value <- "0.05"
+tassel_path <- "/home/hirschc1/della028/software/tassel-5-standalone"
+plink_path <- "/home/hirschc1/della028/software/plink_linux_x86_64_20200219"
 
 # assert to have the correct optional arguments
-pos_args <- 3
+pos_args <- 4
 if (length(args) < pos_args) stop(usage(), "missing positional argument(s)")
 
 if (length(args) > pos_args) {
 
   opt_args <- args[-1:-pos_args]
-  opt_args_allowed <- c("--p-value")
+  opt_args_allowed <- c("--p-value", "--tassel-path", "--plink-path")
   opt_args_requested <- as.character(sapply(opt_args, function(x) unlist(strsplit(x, split = "="))[1]))
   if (any(!opt_args_requested %in% opt_args_allowed)) stop(usage(), "wrong optional argument(s)")
 
@@ -144,7 +152,57 @@ for (idx in names(mod_env_idx_cor_split)) {
     }
     # names(list_markers_mod_idx) <- sapply(names(list_markers_mod_idx), function(x) unlist(strsplit(x, split = "-"))[2])
     names(list_markers_mod_idx) <- sapply(names(list_markers_mod_idx), function(x) gsub("-", "\n", x))
-
+    
+    cat ("calculating LD for markers correlated with ", idx, "...\n", sep = "")
+    
+    # get list of marker names to calculate LD
+    list_markers_for_ld <- paste0(output_folder, "/markers_correlated_", idx, ".txt")
+    fwrite(x = data.frame(unique(unlist(list_markers_mod_idx))), file = list_markers_for_ld,
+           quote = FALSE, na = NA, row.names = FALSE, col.names = FALSE)
+    # create plink file to calculate LD
+    commands_hmp2plk <- paste0(tassel_path, "/run_pipeline.pl",
+                               " -Xmx40g -importGuess ", geno_data,
+                               " -includeSiteNamesInFile ", list_markers_for_ld,
+                               " -export ", gsub(".txt", "", list_markers_for_ld),
+                               " -exportType Plink > /dev/null")
+    system(commands_hmp2plk)
+    # calculate LD across chromosomes
+    commands_plink <- paste0(plink_path, "/plink",
+                             " --file ", gsub(".txt", ".plk", list_markers_for_ld),
+                             " --make-founders",
+                             " --r2 gz dprime with-freqs inter-chr",
+                             " --ld-window-r2 0.9",
+                             " --out ", gsub(".txt", "", list_markers_for_ld))
+    system(commands_plink)
+    
+    cat ("...done!\n", sep = "")
+    
+    # read LD file
+    ld_file <- fread(gsub(".txt", ".ld.gz", list_markers_for_ld), header = TRUE, data.table = FALSE)
+    
+    # substitute the name of markers in LD to each other with a representative marker
+    for (mod in names(list_markers_mod_idx)) {
+      
+      for (marker in 1:length(list_markers_mod_idx[[mod]])) {
+        # get marker name
+        marker_name <- list_markers_mod_idx[[mod]][marker]
+        # check which markers are in LD with it
+        marker_ld <- ld_file[ld_file$SNP_A == marker_name | ld_file$SNP_B == marker_name, c("SNP_A", "SNP_B")]
+        # if there's at least one marker in LD
+        if (nrow(marker_ld) > 0) {
+          # get the name of the first marker in the group
+          # (it will always be the same because file is ordered by position)
+          marker_ld <- unique(unlist(marker_ld))[1]
+          # change the marker name to the representative marker
+          list_markers_mod_idx[[mod]][marker] <- marker_ld
+        }
+      }
+      
+      # keep redundant marker names
+      list_markers_mod_idx[[mod]] <- unique(list_markers_mod_idx[[mod]])
+      
+    }
+    
     if (length(list_markers_mod_idx) > 1) {
 
       # plot intersections of markers
@@ -163,6 +221,8 @@ for (idx in names(mod_env_idx_cor_split)) {
 
 # folder_base <- "analysis/networks/YLD"
 # mod_env_idx_cor_file <- "analysis/networks/YLD/module-env-idx_per_network.pca.txt"
-# # mod_env_idx_cor_file <- "analysis/networks/YLD/module-env-idx_per_network.per-intervals.txt"
-# output_folder <- "analysis/networks/YLD/plots_mod-env-idx"
+# geno_data <- "data/usda_hybrids_projected-SVs-SNPs.poly.low-missing.pruned-100kb.geno-miss-0.25.hmp.txt"
+# output_folder <- "analysis/networks/YLD/overlap_markers"
 # p_value <- 0.1
+# tassel_path <- "/home/hirschc1/della028/software/tassel-5-standalone"
+# plink_path <- "/home/hirschc1/della028/software/plink_linux_x86_64_20200219"
