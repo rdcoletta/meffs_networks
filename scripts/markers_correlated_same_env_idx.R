@@ -19,9 +19,9 @@ optional argument:
   --help                      show this helpful message
   --p-value=VALUE             p-value threshold to filter correlations (default: 0.05)
   --tassel-path=PATH          absolute path to TASSEL 5
-                              (default: '/home/hirschc1/della028/software/tassel-5-standalone') 
+                              (default: '/home/hirschc1/della028/software/tassel-5-standalone')
   --plink-path=PATH           absolute path to PLINK 1.9
-                              (default: '/home/hirschc1/della028/software/plink_linux_x86_64_20200219') 
+                              (default: '/home/hirschc1/della028/software/plink_linux_x86_64_20200219')
 
 
 "
@@ -152,9 +152,9 @@ for (idx in names(mod_env_idx_cor_split)) {
     }
     # names(list_markers_mod_idx) <- sapply(names(list_markers_mod_idx), function(x) unlist(strsplit(x, split = "-"))[2])
     names(list_markers_mod_idx) <- sapply(names(list_markers_mod_idx), function(x) gsub("-", "\n", x))
-    
+
     cat ("calculating LD for markers correlated with ", idx, "...\n", sep = "")
-    
+
     # get list of marker names to calculate LD
     list_markers_for_ld <- paste0(output_folder, "/markers_correlated_", idx, ".txt")
     fwrite(x = data.frame(unique(unlist(list_markers_mod_idx))), file = list_markers_for_ld,
@@ -174,15 +174,15 @@ for (idx in names(mod_env_idx_cor_split)) {
                              " --ld-window-r2 0.9",
                              " --out ", gsub(".txt", "", list_markers_for_ld))
     system(commands_plink)
-    
+
     cat ("...done!\n", sep = "")
-    
+
     # read LD file
     ld_file <- fread(gsub(".txt", ".ld.gz", list_markers_for_ld), header = TRUE, data.table = FALSE)
-    
+
     # substitute the name of markers in LD to each other with a representative marker
     for (mod in names(list_markers_mod_idx)) {
-      
+
       for (marker in 1:length(list_markers_mod_idx[[mod]])) {
         # get marker name
         marker_name <- list_markers_mod_idx[[mod]][marker]
@@ -197,12 +197,12 @@ for (idx in names(mod_env_idx_cor_split)) {
           list_markers_mod_idx[[mod]][marker] <- marker_ld
         }
       }
-      
+
       # keep redundant marker names
       list_markers_mod_idx[[mod]] <- unique(list_markers_mod_idx[[mod]])
-      
+
     }
-    
+
     if (length(list_markers_mod_idx) > 1) {
 
       # plot intersections of markers
