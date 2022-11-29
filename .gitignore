@@ -1,5 +1,7 @@
 analysis/*
 data/*
+figures/*
+supp_materials/*
 .DS_Store
 .Rproj.user
 *.Rhistory
