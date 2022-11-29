@@ -46,15 +46,21 @@ Number of markers remaining after pruning the genotypic dataset with different w
 
 ## Phenotypic data
 
-We also need phenotypic data to estimate the effects markers. For this purpose, I will use phenotypic data from my genomic prediction project where five traits (EHT, Moisture, PHT, TWT, YLD) of ~400 hybrids were evaluated in 4-11 environments.
+We also need phenotypic data to estimate the effects markers. For this purpose, I will use grain yield data from my genomic prediction project where ~400 hybrids were evaluated in 9 environments.
 
 ```bash
 # transfer data
 cd ~/projects
-cp genomic_prediction/hybrids/data/1stStage_BLUEs.*-per-env.txt marker-effects_networks/data/
+cp genomic_prediction/hybrids/data/1stStage_BLUEs.YLD-per-env.txt marker-effects_networks/data/
 
 # go back to project folder
 cd ~/projects/marker-effects_networks
+
+# remove bad environment
+sed -i '/BEC-EP20/d' data/1stStage_BLUEs.YLD-per-env.txt
+
+# count number of hybrids per environment
+grep -v NA data/1stStage_BLUEs.YLD-per-env.txt | cut -f 2 | sed 1d | uniq -c
 ```
 
 Total number of hybrids evaluated per environment:
@@ -63,7 +69,6 @@ Total number of hybrids evaluated per environment:
 | -------- | ------- |
 | BEC-BL19 | 367     |
 | BEC-BL20 | 398     |
-| BEC-EP20 | 399     |
 | COR19    | 370     |
 | COR20    | 364     |
 | MIN19    | 356     |
@@ -72,19 +77,21 @@ Total number of hybrids evaluated per environment:
 | SYN20    | 397     |
 | URB19    | 371     |
 
+> Originally it was 10 environments, but after preliminary analysis, we were not able to get good marker effects estimation for one environment and decided to drop it.
+
 
 
 ## Estimate marker effects
 
-We will estimate marker effects for the five traits using four different models to see how much the network changes based on the type of model selected. The rationale for using more than one model is that different models may be better for a certain genetic architecture, which is unknown from empirical data. In addition, we chose to use marker dataset pruned in 100kb windows to balance the number of markers vs computation time.
+We will estimate marker effects for the trait using two different models to see how much the network changes based on the type of model selected. The rationale for using more than one model is that different models may be better for a certain genetic architecture, which is unknown from empirical data. In addition, we chose to use marker dataset pruned in 100kb windows to balance the number of markers vs computation time.
 
 ```bash
 # estimate effects
 MARKERS=data/usda_hybrids_projected-SVs-SNPs.poly.low-missing.pruned-100kb.geno-miss-0.25.hmp.txt
-for trait in EHT Moisture PHT TWT YLD; do
+for trait in YLD; do
   BLUES=data/1stStage_BLUEs.${trait}-per-env.txt
   OUTFOLDER=analysis/marker_effects/${trait}
-  for marker_eff_model in rrblup bayescpi mrr gwas; do
+  for marker_eff_model in rrblup gwas; do
     sbatch --export=MARKERS=${MARKERS},BLUES=${BLUES},OUTFOLDER=${OUTFOLDER},MEFFMODEL=${marker_eff_model} scripts/estimate_marker_effects.sh
   done
 done
@@ -93,16 +100,23 @@ done
 module load R/3.6.0
 Rscript scripts/plot_marker_effects.R analysis/marker_effects \
                                       analysis/marker_effects/qc \
-                                      --traits=EHT,Moisture,PHT,TWT,YLD \
-                                      --models=rrblup,bayescpi,mrr,gwas
-Rscript scripts/plot_marker_effects.R analysis/marker_effects \
-                                      analysis/marker_effects/qc_no-missing-genos \
-                                      --traits=EHT,Moisture,PHT,TWT,YLD \
-                                      --models=rrblup,bayescpi,mrr,gwas \
-                                      --no-missing-genotypes
+                                      --traits=YLD \
+                                      --models=rrblup,gwas
 ```
 
-> BayesCpi model didn't perform as well as the other models. It will be interesting to see the networks that come out of the marker effects from this model. It may be a control for a "bad" input to build networks.
+Correlation between real phenotypes and predicted GEBVs:
+
+| env      | rrBLUP | GWAS |
+| -------- | ------ | ---- |
+| BEC-BL19 | 0.83   | 0.84 |
+| BEC-BL20 | 0.66   | 0.68 |
+| COR19    | 0.74   | 0.74 |
+| COR20    | 0.83   | 0.84 |
+| MIN19    | 0.76   | 0.78 |
+| MIN20    | 0.7    | 0.7  |
+| SYN19    | 0.81   | 0.82 |
+| SYN20    | 0.72   | 0.72 |
+| URB19    | 0.75   | 0.76 |
 
 
 
@@ -145,16 +159,55 @@ MARKERS=data/usda_hybrids_projected-SVs-SNPs.poly.low-missing.pruned-100kb.geno-
 # trait to build network
 TRAIT=YLD
 
-# marker effects from rrblup
+# test different cv thresholds depending on normalization method
+
+# marker effects model
 for meff_model in rrblup gwas; do
   # marker effects file
   MEFF_FILE=analysis/marker_effects/${TRAIT}/marker_effects.${meff_model}.txt
   # type of normalization method to use
-  for norm_method in minmax zscore none; do
+  for norm_method in minmax; do
     # adjust cv threshold to type of normalization
-    [[ ${norm_method} == 'minmax' ]] && CV_THRESHOLD=0.12
-    [[ ${norm_method} == 'zscore' ]] && CV_THRESHOLD=0.75
-    [[ ${norm_method} == 'none' ]] && CV_THRESHOLD=0.75
+    for cv_threshold in 0.025 0.05 0.075 0.1 0.125 0.15 0.175 0.2; do
+      # create output folder
+      OUTFOLDER=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}/cv_thresholds
+      mkdir -p ${OUTFOLDER}
+      # submit job
+      sbatch --export=MARKERS=${MARKERS},MEFF_FILE=${MEFF_FILE},OUTFOLDER=${OUTFOLDER},NORM_METHOD=${norm_method},CV_THRESHOLD=${cv_threshold} scripts/pick_soft_threshold.sh
+    done
+  done
+done
+
+# marker effects model
+for meff_model in rrblup gwas; do
+  # marker effects file
+  MEFF_FILE=analysis/marker_effects/${TRAIT}/marker_effects.${meff_model}.txt
+  # type of normalization method to use
+  for norm_method in zscore none; do
+    # adjust cv threshold to type of normalization
+    for cv_threshold in 0.5 0.55 0.6 0.65 0.7 0.75 0.8 0.85 0.9; do
+      # create output folder
+      OUTFOLDER=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}/cv_thresholds
+      mkdir -p ${OUTFOLDER}
+      # submit job
+      sbatch --export=MARKERS=${MARKERS},MEFF_FILE=${MEFF_FILE},OUTFOLDER=${OUTFOLDER},NORM_METHOD=${norm_method},CV_THRESHOLD=${cv_threshold} scripts/pick_soft_threshold.sh
+    done
+  done
+done
+```
+
+The CV threshold that maximized scale-free topology model fit and mantained about the same number of markers was 0.125 for minmax normalization and 0.8 for Z-score normalization. Also, Z-score and no normalization yield the same results, so I'll just use `minmax`- and `zscore`-normalized data for downstream analysis.
+
+```bash
+# marker effects model
+for meff_model in rrblup gwas; do
+  # marker effects file
+  MEFF_FILE=analysis/marker_effects/${TRAIT}/marker_effects.${meff_model}.txt
+  # type of normalization method to use
+  for norm_method in minmax zscore; do
+    # adjust cv threshold to type of normalization
+    [[ ${norm_method} == 'minmax' ]] && CV_THRESHOLD=0.125
+    [[ ${norm_method} == 'zscore' ]] && CV_THRESHOLD=0.8
     # create output folder
     OUTFOLDER=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}
     mkdir -p ${OUTFOLDER}
@@ -164,13 +217,11 @@ for meff_model in rrblup gwas; do
 done
 ```
 
-> Based on preliminary testing, using a more stringent CV cutoff resulted in better scale-free topology fit. Also, Z-score and no normalization yield the same results here and in my preliminary tests, so I'll just run `minmax`- and `zscore`-normalized data.
-
 
 
 ### Step 3. Build the network
 
-Depending on how the marker effects were calculated, I will need to use different powers as the soft threshold for WGCNA (`20` for rrblup model and `24` for gwas model). Despite being different, both of them are much higher powers that what's tipically used in gene co-expression networks, suggesting that building marker effects networks will require tuning additional parameters downstream the pipeline. The `scripts/build_meff_network.R` builds the network for a given soft threshold.
+I will use power of `24` as the soft threshold for WGCNA as it seems to have a good fit for all normalization and model effect scenarios. It's worth noting that this is a much higher power than what's tipically used in gene co-expression networks, suggesting that building marker effects networks will require tuning additional parameters downstream the pipeline. The `scripts/build_meff_network.R` builds the network for a given soft threshold.
 
 ```bash
 # trait to build network
@@ -184,9 +235,8 @@ for meff_model in rrblup gwas; do
     FOLDER=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}
     # file with saved R variables from step 2
     RDATA=${FOLDER}/pick_soft_threshold.RData
-    # lowest power for which the scale-free topology fit index curve
-    [[ ${meff_model} == 'rrblup' ]] && SFT=20
-    [[ ${meff_model} == 'gwas' ]] && SFT=24
+    # power for which the scale-free topology fit index curve
+    SFT=24
     # submit job
     sbatch --export=RDATA=${RDATA},OUTFOLDER=${FOLDER},SFT=${SFT} scripts/build_meff_network.sh
   done
@@ -210,9 +260,8 @@ for meff_model in rrblup gwas; do
     FOLDER=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}
     # file with saved R variables from step 2
     RDATA=${FOLDER}/build_meff_network.RData
-    # lowest power for which the scale-free topology fit index curve
-    [[ ${meff_model} == 'rrblup' ]] && SFT=20
-    [[ ${meff_model} == 'gwas' ]] && SFT=24
+    # power for which the scale-free topology fit index curve
+    SFT=24
     # minimum number of markers per module
     for minsize in 25 50 100; do
       # define modules with and without the PAM stage
@@ -254,9 +303,8 @@ for meff_model in rrblup gwas; do
         FOLDER=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}/min_mod_size_${minsize}/pamStage_${pam}
         # file with saved R variables from step 2
         RDATA=${FOLDER}/define_network_modules.RData
-        # lowest power for which the scale-free topology fit index curve
-        [[ ${meff_model} == 'rrblup' ]] && SFT=20
-        [[ ${meff_model} == 'gwas' ]] && SFT=24
+        # power for which the scale-free topology fit index curve
+        SFT=24
         # number of most important markers to print for each module
         NHUBS=10
         # submit job
@@ -270,7 +318,7 @@ done
 Rscript scripts/summarize_qc_networks.R analysis/networks/YLD
 ```
 
-> In general, kDiff plots from GWAS effects networks seem to be have better quality modules (i.e. markers with more connections within their own module than with other modules) than those from rrblup effects networks. Turning off the `pamStage` when assigning modules also seem to result in slightly better kDiff, cluster coefficient (i.e. tendency to associate with only a select group) and TOM plots than when this option is on (more visible when GWAS effects were used).
+> In general, kDiff plots from rrBLUP effects networks seem to be have better quality modules (i.e. markers with more connections within their own module than with other modules) than those from GWAS effects networks. It's hard to tell if turning off the `pamStage` when assigning modules had any meaningful impact on kDiff, cluster coefficient and TOM plots than when this option is on.
 
 In addition, I wrote `scripts/compare_two_networks.R` to check which modules in one network corresponds to another module in a different network. This will help us understand how different parameters chosen during network construction affects the clustering of markers, and also help identify correponding modules when correlating networks with traits. To do that, I calculate the correlation between the module memberships (the correlation of the module eigengene and the marker effect profile) of two different networks.
 
@@ -618,9 +666,8 @@ for meff_model in rrblup gwas; do
       for pam in on off; do
         # marker effects file
         MEFF_FILE=analysis/marker_effects/${TRAIT}/marker_effects.${meff_model}.txt
-        # lowest power for which the scale-free topology fit index curve
-        [[ ${meff_model} == 'rrblup' ]] && SFT=20
-        [[ ${meff_model} == 'gwas' ]] && SFT=24
+        # power for which the scale-free topology fit index curve
+        SFT=24
         # folder with results
         FOLDER=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}/min_mod_size_${minsize}/pamStage_${pam}
         # folder with ld per module
@@ -653,22 +700,16 @@ Rscript scripts/summarize_gwas_enrich.R analysis/networks/YLD
 
 ## Relate modules to environmental covariables
 
-Since we are interested in understanding phenotypic plasticity across environments, we also want to see if the network modules correlate with environmental covariables. To do that, we first extract these covariables running `scripts/get_env_types.R`.
+Since we are interested in understanding phenotypic plasticity across environments, we also want to see if the network modules correlate with environmental covariables. To do that, we first extract these covariables running `scripts/get_env_types.R`. I created `data/env_sites_coord.csv` with environmental coordinates and planting/harverst dates.
 
 ```bash
 module load R/3.6.0
 
-# transfer file with env coordinates from different project
-cp ../genomic_prediction/hybrids/data/usda_sites_coord_for_simulation.csv data/env_sites_coord.csv
-
 # get env covariables
-Rscript scripts/get_env_types.R data/env_sites_coord.csv \
+Rscript scripts/get_env_types.R data/env_sites_coord.TEST.csv \
                                 data/env_covariables \
                                 --country=USA \
                                 --interval-window=3
-
-# remove temp files
-rm USA*_msk_alt.*
 ```
 
 > Note: had to run this script locally due to some sort of incompatibility with MSI server. I transfered the files to MSI afterwards using FileZilla.
@@ -756,9 +797,9 @@ for idx_type in means intervals pca fw; do
   if [[ ${idx_type} == "means" ]]; then
     PVAL=0.1
   elif [[ ${idx_type} == "intervals" ]]; then
-    PVAL=0.01
+    PVAL=0.001
   else
-    PVAL=0.05
+    PVAL=0.1
   fi
 
   # plot env_idx-module relationships
@@ -773,7 +814,8 @@ for idx_type in means intervals pca fw; do
   Rscript scripts/markers_correlated_same_env_idx.R \
           analysis/networks/YLD \
           analysis/networks/YLD/module-env-idx_per_network.${idx_type}.txt \
-          analysis/networks/YLD/plots_mod-env-idx \
+          data/usda_hybrids_projected-SVs-SNPs.poly.low-missing.pruned-100kb.geno-miss-0.25.hmp.txt \
+          analysis/networks/YLD/overlap_markers \
           --p-value=${PVAL}
 
 done
@@ -782,5 +824,5 @@ done
 Rscript scripts/plot_pc_contributions.R \
         data/env_covariables/pca_contributions.txt \
         analysis/networks/YLD/pc_contributions \
-        --prop-covariables=0.05
+        --prop-covariables=0.1
 ```
