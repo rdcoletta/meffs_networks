@@ -1,5 +1,7 @@
 library(data.table)
 library(ggplot2)
+library(tidyr)
+library(dplyr)
 
 usage <- function() {
   cat("
@@ -130,9 +132,60 @@ for (pc in colnames(pca_contrib)[-1]) {
 
 }
 
+# summarize contributions to PC in a bar plot (frequency of certain env idx)
+# across categories (beginning, mid, end season) - also add total % variance
+# explained per category
+
+# split idx and interval - careful with some idx that has more than one "_" to split
+pca_contrib[, c("idx", "interval")] <- do.call(rbind, lapply(pca_contrib$env_idx, function(idx) {
+  idx <- unlist(strsplit(idx, split = "_"))
+  if (length(idx) > 2) idx <- c(paste0(idx[1:(length(idx) - 1)], collapse = "_"), idx[length(idx)])
+  return(idx)
+}))
+
+# reformat table
+pca_contrib <- pca_contrib %>% 
+  select(-env_idx) %>% 
+  pivot_longer(-c(idx, interval), names_to = "pc", values_to = "contrib") %>% 
+  mutate(interval = as.numeric(interval),
+         season = case_when(interval < max(interval) / 3 ~ "early",
+                            interval >= max(interval) / 3 & interval < (max(interval) / 3) * 2 ~ "mid",
+                            interval > (max(interval) / 3) * 2 ~ "late"),
+         season = factor(season, levels = c("early", "mid", "late"))) %>% 
+  group_by(idx, pc, season) %>% 
+  summarize(contrib = sum(contrib))
+
+for (PC in unique(pca_contrib$pc)) {
+  
+  # create plot
+  plot_summary_pc <- pca_contrib %>% 
+    filter(pc == PC) %>% 
+    group_by(season) %>%
+    arrange(desc(contrib), .by_group = TRUE) %>% 
+    ggplot() +
+    facet_wrap(~ idx, nrow = 3) +
+    geom_line(aes(x = season, y = contrib, group = 1), show.legend = FALSE) +
+    labs(x = "Season stage", y = "Total contributions (%)") +
+    theme_bw()
+  # save plot
+  outfile <- paste0(output_folder, "/summary_contributions.", PC, ".pdf")
+  ggsave(plot_summary_pc, filename = outfile, device = "pdf", height = 5, width = 8)
+  
+  # pca_contrib %>% 
+  #   filter(pc == PC) %>% 
+  #   group_by(season) %>%
+  #   arrange(desc(contrib), .by_group = TRUE) %>% 
+  #   ggplot() +
+  #   facet_wrap(~ season, nrow = 3) +
+  #   geom_col(aes(x = idx, y = contrib))
+  
+}
+
 
 
 #### debug ----
 
 # pca_contrib_file <- "data/env_covariables/pca_contributions.txt"
 # output_folder <- "analysis/networks/YLD/pc_contributions"
+# n_covariables <- NULL
+# prop_covariables <- 0.1
