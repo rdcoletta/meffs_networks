@@ -164,8 +164,8 @@ marker_effects <- marker_effects[marker_order, ]
 if (!all(rownames(marker_info) == rownames(marker_effects))) stop("marker names don't match")
 
 # make samples as rows and markers as columns
-marker_effects <- data.frame(t(marker_effects))
-marker_info <- data.frame(t(marker_info))
+marker_effects <- data.frame(t(marker_effects), check.names = FALSE)
+marker_info <- data.frame(t(marker_info), check.names = FALSE)
 
 
 
