@@ -4,6 +4,7 @@ library(bWGR)
 library(tidyr)
 library(tibble)
 library(ggplot2)
+library(qqplotr)
 source("http://zzlab.net/GAPIT/GAPIT.library.R")
 source("http://zzlab.net/GAPIT/gapit_functions.txt")
 
@@ -143,6 +144,10 @@ if (!all(rownames(markers) == rownames(means))) stop("IDs don't match between ge
 
 #### estimate marker effects ----
 
+# create folder for residuals plots
+residuals_folder <- paste0(output_folder, "/plots_residuals")
+if (!dir.exists(residuals_folder)) dir.create(residuals_folder)
+
 if (marker_eff_model == "rrblup") {
 
   cat("estimating marker effects by univariate rrBLUP\n")
@@ -166,6 +171,25 @@ if (marker_eff_model == "rrblup") {
     # calculate cor obs vs pred
     cor_obs_pred <- cor(as.numeric(means[, env]), as.numeric(gebvs_env[, env]), use = "complete.obs")
     cat("  ", env, " - correlation obs vs pred:", round(cor_obs_pred, digits = 2), "\n")
+    # calculate residuals
+    residuals <- as.numeric(means[, env]) - as.numeric(gebvs_env[, env])
+    residuals <- data.frame(residuals = sort(residuals))
+    # plot distribution of residuals
+    residuals_hist <- ggplot(data = residuals, aes(x = residuals)) +
+      geom_histogram(color = "black", fill = "#8DA0CB") +
+      coord_cartesian(xlim = c(-max(abs(residuals)), max(abs(residuals)))) +
+      theme_light()
+    ggsave(residuals_hist, filename = paste0(residuals_folder, "/dist_", marker_eff_model, "_", env, ".pdf"),
+           device = "pdf", units = "in", width = 4, height = 4)
+    # qqplot of residuals
+    residuals_qq <- ggplot(data = residuals, aes(sample = residuals)) +
+      stat_qq_band(bandType = "pointwise", fill = "grey50", alpha = 0.2) +
+      stat_qq_line(colour = "#8DA0CB") +
+      stat_qq_point() +
+      labs(x = "theoretical quantiles",  y = "sample quantiles") +
+      theme_light()
+    ggsave(residuals_qq, filename = paste0(residuals_folder, "/qq_", marker_eff_model, "_", env, ".pdf"),
+           device = "pdf", units = "in", width = 4, height = 4)
     # append effects to main df
     marker_effects <- cbind(marker_effects, marker_effects_env)
     gebvs <- cbind(gebvs, gebvs_env)
@@ -277,6 +301,27 @@ if (marker_eff_model == "gwas") {
     # calculate cor obs vs pred
     cor_obs_pred <- cor(as.numeric(means[, env]), as.numeric(gebvs_env[, env]), use = "complete.obs")
     cat("  ", env, " - correlation obs vs pred:", round(cor_obs_pred, digits = 2), "\n")
+    
+    # calculate residuals
+    residuals <- as.numeric(means[, env]) - as.numeric(gebvs_env[, env])
+    residuals <- data.frame(residuals = sort(residuals))
+    # plot distribution of residuals
+    residuals_hist <- ggplot(data = residuals, aes(x = residuals)) +
+      geom_histogram(color = "black", fill = "#8DA0CB") +
+      coord_cartesian(xlim = c(-max(abs(residuals)), max(abs(residuals)))) +
+      theme_light()
+    ggsave(residuals_hist, filename = paste0(residuals_folder, "/dist_", marker_eff_model, "_", env, ".pdf"),
+           device = "pdf", units = "in", width = 4, height = 4)
+    # qqplot of residuals
+    residuals_qq <- ggplot(data = residuals, aes(sample = residuals)) +
+      stat_qq_band(bandType = "pointwise", fill = "grey50", alpha = 0.2) +
+      stat_qq_line(colour = "#8DA0CB") +
+      stat_qq_point() +
+      labs(x = "theoretical quantiles",  y = "sample quantiles") +
+      theme_light()
+    ggsave(residuals_qq, filename = paste0(residuals_folder, "/qq_", marker_eff_model, "_", env, ".pdf"),
+           device = "pdf", units = "in", width = 4, height = 4)
+    
     # append effects to main df
     marker_effects <- cbind(marker_effects, marker_effects_env)
     gebvs <- cbind(gebvs, gebvs_env)
@@ -308,11 +353,9 @@ fwrite(gebvs, file = outfile_gebvs, quote = FALSE, sep = "\t", na = NA, row.name
 
 #### debug ----
 
-# markers_file <- "data/usda_hybrids_projected-SVs-SNPs.poly.low-missing.pruned-100kb.geno-miss-0.25.hmp.txt"
-# # blues_file <- "data/1stStage_BLUEs.YLD-per-env.txt"
-# # output_folder <- "analysis/marker_effects/YLD"
-# blues_file <- "data/1stStage_BLUEs.EHT-per-env.txt"
-# output_folder <- "analysis/marker_effects/EHT"
+# markers_file <- "data/usda_hybrids_SNP-chip.maf-filter.pruned-100kb.geno-miss-0.25.hmp.txt"
+# blues_file <- "data/1stStage_BLUEs.YLD-per-env.txt"
+# output_folder <- "analysis/marker_effects/YLD"
 # marker_eff_model <- "rrblup"
 # # marker_eff_model <- "mrr"
 # impute_effect <- "Add"
