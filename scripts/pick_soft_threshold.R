@@ -210,6 +210,9 @@ powers <- c(c(1:10), seq(from = 12, to = 30, by = 2))
 
 # call the network topology analysis function
 sft <- pickSoftThreshold(marker_effects, powerVector = powers, verbose = 5)
+fwrite(data.frame(sft$fitIndices, total.markers = ncol(marker_effects)),
+       file = paste0(output_folder, "/scale-free_topology_fit_index.cv-",  cv_threshold, ".txt"),
+       quote = FALSE, sep = "\t", na = NA, row.names = FALSE)
 
 # Plot the results
 pdf(file = paste0(output_folder, "/scale-free_topology_fit_index.cv-",  cv_threshold, ".pdf"), width = 9, height = 5)
@@ -241,7 +244,7 @@ save(marker_effects, marker_info, sft, file = paste0(output_folder, "/pick_soft_
 
 # marker_effects_file <- "analysis/marker_effects/YLD/marker_effects.rrblup.txt"
 # # marker_effects_file <- "analysis/marker_effects/YLD/marker_effects.rrblup.no-missing-genos.txt"
-# marker_hmp_file <- "data/usda_hybrids_projected-SVs-SNPs.poly.low-missing.pruned-100kb.geno-miss-0.25.hmp.txt"
+# marker_hmp_file <- "data/usda_hybrids_SNP-chip.maf-filter.pruned-100kb.geno-miss-0.25.hmp.txt"
 # output_folder <- "tests/networks/YLD"
 # # norm_method <- "none"
 # norm_method <- "minmax"
