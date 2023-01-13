@@ -412,6 +412,139 @@ plot18 <- qc_results %>%
 ggsave(plot = plot18, filename = paste0(output_folder, "/kRatio_per_network.adjacency.pdf"),
        device = "pdf", width = 28, height = 12)
 
+# n modules per net
+plot19 <- qc_results %>%
+  filter(source == "adjacency") %>%
+  group_by(meff_model, norm_method, minsize, pamStage, module) %>%
+  summarize(n_markers = n()) %>%
+  ungroup() %>%
+  group_by(meff_model, norm_method, minsize, pamStage) %>% 
+  mutate(n_modules = n(),
+         network = cur_group_id()) %>%
+  ungroup() %>% 
+  mutate(n_markers_no_grey = NA,
+         n_markers_no_grey = case_when(module != "grey" ~ n_markers)) %>% 
+  pivot_longer(c(n_markers, n_markers_no_grey, n_modules), names_to = "metric", values_to = "values") %>%
+  mutate(network = factor(network),
+         metric = factor(metric, levels = c("n_modules", "n_markers", "n_markers_no_grey"),
+                         labels = c("Total modules", "Unassigned markers", "Markers per module"))) %>% 
+  ggplot() +
+  facet_nested(metric ~ meff_model + norm_method + minsize + pamStage, scales = "free",
+               nest_line = element_line(linetype = 1, color = "gray80", lineend = "butt")) +
+  geom_col(data = function(x) subset(x, metric == "Total modules"),
+           aes(x = network, y = values), show.legend = FALSE) +
+  geom_col(data = function(x) subset(x, metric == "Unassigned markers"  & module == "grey"),
+           aes(x = network, y = values), fill = "grey", show.legend = FALSE) +
+  geom_boxplot(data = function(x) subset(x, metric == "Markers per module"),
+               aes(x = network, y = values, fill = metric), outlier.size = 0.25, show.legend = FALSE) +
+  labs(x = "Networks", y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.spacing = unit(0, "lines"))
+ggsave(plot = plot19, filename = paste0(output_folder, "/n_modules_per_network.png"),
+       device = "png", dpi = 300, width = 10, height = 6)
+# need to add white spaces between strip groups
+
+# connectivity + n markers
+plot20 <- qc_results %>%
+  # filter(source == "adjacency") %>%
+  filter(source == "adjacency" & module != "grey") %>%
+  group_by(meff_model, norm_method, minsize, pamStage, module) %>%
+  mutate(n_markers = n()) %>%
+  ungroup() %>%
+  group_by(meff_model, norm_method, minsize, pamStage) %>% 
+  mutate(network = cur_group_id()) %>%
+  ungroup() %>% 
+  pivot_longer(c(kDiff, clusterCoeff, kRatio), names_to = "metric", values_to = "values") %>%
+  mutate(module = factor(module),
+         network = factor(network)) %>%
+  ggplot() +
+  facet_nested(metric ~ meff_model + norm_method + minsize + pamStage, scales = "free",
+               nest_line = element_line(linetype = 1, color = "gray80", lineend = "butt")) +
+  geom_boxplot(aes(x = network, y = values, fill = metric), outlier.size = 0.25, show.legend = FALSE) +
+  labs(x = "Networks", y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.spacing = unit(0, "lines"))
+ggsave(plot = plot20, filename = paste0(output_folder, "/summary_metrics_per_network.png"),
+       device = "png", dpi = 300, width = 10, height = 6)
+# need to add white spaces between strip groups
+
+
+# proportion of average positive kDiff
+plot21 <- qc_results %>%
+  # filter(source == "adjacency") %>%
+  filter(source == "adjacency" & module != "grey") %>%
+  group_by(meff_model, norm_method, minsize, pamStage, module) %>%
+  summarize(n_markers = n(),
+            median_kDiff = median(kDiff),
+            mean_kDiff = mean(kDiff),
+            se_kDiff = mean_kDiff / sqrt(n_markers)) %>%
+  ungroup() %>%
+  group_by(meff_model, norm_method, minsize, pamStage) %>% 
+  summarize(network = cur_group_id(),
+            n_modules = n(),
+            # positive_median_kDiff = round(sum(median_kDiff > 0) / n_modules, digits = 2),
+            positive_mean_kDiff = round(sum(mean_kDiff > 0) / n_modules, digits = 2)) %>%
+  ungroup() %>%
+  # pivot_longer(c(positive_median_kDiff, positive_mean_kDiff), names_to = "metric", values_to = "values") %>%
+  pivot_longer(positive_mean_kDiff, names_to = "metric", values_to = "values") %>%
+  mutate(network = factor(network)) %>%
+  ggplot() +
+  facet_nested(metric ~ meff_model + norm_method + minsize + pamStage, scales = "free",
+               nest_line = element_line(linetype = 1, color = "gray80", lineend = "butt")) +
+  geom_col(aes(x = network, y = values, fill = metric), show.legend = FALSE) +
+  labs(x = "Networks", y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.spacing = unit(0, "lines"))
+ggsave(plot = plot21, filename = paste0(output_folder, "/proportion_positive_kDiff_per_module.png"),
+       device = "png", dpi = 300, width = 10, height = 6)
+# need to add white spaces between strip groups
+
+
+# qc_results %>%
+#   filter(source == "adjacency") %>%
+#   group_by(meff_model, norm_method, minsize, pamStage, module) %>%
+#   summarize(n_markers = n()) %>%
+#   ungroup() %>%
+#   group_by(meff_model, norm_method, minsize, pamStage) %>%
+#   summarize(n_modules = n(),
+#             network = cur_group_id()) %>%
+#   ungroup() %>% 
+#   arrange(minsize, n_modules) %>% View()
+
+# qc_results %>%
+#   filter(source == "adjacency") %>%
+#   group_by(meff_model, norm_method, minsize, pamStage, module) %>%
+#   summarize(n_markers = n()) %>%
+#   ungroup() %>%
+#   group_by(meff_model, norm_method, minsize, pamStage) %>% 
+#   summarize(n_modules = n(),
+#             n_markers_median = median(n_markers, na.rm = TRUE), 
+#             n_markers_mean = mean(n_markers, na.rm = TRUE),
+#             n_markers_se = mean(n_markers, na.rm = TRUE) / sqrt(n_modules),
+#             network = cur_group_id()) %>%
+#   ungroup() %>%
+#   arrange(minsize, n_modules) %>% View()
+
+# qc_results %>%
+#   filter(source == "adjacency") %>%
+#   group_by(meff_model, norm_method, minsize, pamStage, module) %>%
+#   summarize(n_markers = n()) %>%
+#   ungroup() %>%
+#   group_by(meff_model, norm_method, minsize, pamStage) %>%
+#   summarize(n_modules = n(),
+#             n_tests = n_modules * 9) %>%
+#   ungroup() %>%
+#   arrange(minsize, n_modules) %>% View()
+
 
 
 #### debug ----
