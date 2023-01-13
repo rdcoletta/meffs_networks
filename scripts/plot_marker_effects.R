@@ -87,7 +87,7 @@ for (trait in traits) {
   
   # create plots folder
   plots_folder <- paste0(outfolder, "/", trait)
-  if (!dir.exists(plots_folder)) dir.create(plots_folder)
+  if (!dir.exists(plots_folder)) dir.create(plots_folder, recursive = TRUE)
   
   # create empty data frames to store results across models
   marker_effects_all <- data.frame(stringsAsFactors = FALSE)
@@ -167,6 +167,28 @@ for (trait in traits) {
     theme(panel.grid = element_blank())
   ggsave(filename = paste0(plots_folder, "/cor_effects_models.pdf"),
          plot = plot_cor_effects, device = "pdf")
+  
+  # calculate correlations per environment
+  cor_effects_per_env <- data.frame(stringsAsFactors = FALSE)
+  for (env in unique(marker_effects_all$env)) {
+    marker_effects_all_per_env <- marker_effects_all[marker_effects_all$env == env, models]
+    cor_effects_subset <- round(cor(as.matrix(marker_effects_all_per_env), use = "complete.obs"), digits = 2)
+    cor_effects_subset <- cbind(env = env, reshape2::melt(cor_effects_subset))
+    cor_effects_per_env <- rbind(cor_effects_per_env, cor_effects_subset)
+  }
+  # plot correlation among models per env
+  plot_cor_effects_per_env <- ggplot(data = cor_effects_per_env, aes(x = Var1, y = Var2, fill = value)) + 
+    facet_wrap(~ env) +
+    geom_tile() +
+    geom_text(aes(Var1, Var2, label = value), color = "black", fontface = "bold") +
+    labs(title = trait, x = "", y = "") +
+    scale_fill_gradient2(low = "#66ADE5", mid = "#FFC465", high = "#BF1B0B", 
+                         midpoint = 0, limit = c(-1, 1), space = "Lab", 
+                         name = "Pearson\nCorrelation") +
+    theme_minimal() +
+    theme(panel.grid = element_blank())
+  ggsave(filename = paste0(plots_folder, "/cor_effects_models_per_env.pdf"),
+         plot = plot_cor_effects_per_env, device = "pdf")
   
   # read file with genotype means for each environment
   blues_file <- paste0("data/1stStage_BLUEs.", trait, "-per-env.txt")
@@ -255,6 +277,30 @@ for (trait in traits) {
     theme(panel.grid = element_blank())
   ggsave(filename = paste0(plots_folder, "/cor_gebvs_models.pdf"),
          plot = plot_cor_gebvs, device = "pdf")
+  
+  # calculate correlations per environment
+  cor_gebvs_per_env <- data.frame(stringsAsFactors = FALSE)
+  for (env in unique(gebvs_all$env)) {
+    gebvs_all_per_env <- gebvs_all[gebvs_all$env == env, c(models, "real_pheno")]
+    cor_gebvs_subset <- round(cor(as.matrix(gebvs_all_per_env), use = "complete.obs"), digits = 2)
+    cor_gebvs_subset <- cbind(env = env, reshape2::melt(cor_gebvs_subset))
+    cor_gebvs_per_env <- rbind(cor_gebvs_per_env, cor_gebvs_subset)
+  }
+  # plot correlation among models per env
+  plot_cor_gebvs_per_env <- ggplot(data = cor_gebvs_per_env, aes(x = Var1, y = Var2, fill = value)) + 
+    facet_wrap(~ env) +
+    geom_tile() +
+    geom_text(aes(Var1, Var2, label = value), color = "black", fontface = "bold") +
+    labs(title = trait, x = "", y = "") +
+    scale_fill_gradient2(low = "#66ADE5", mid = "#FFC465", high = "#BF1B0B", 
+                         midpoint = 0, limit = c(-1, 1), space = "Lab", 
+                         name = "Pearson\nCorrelation") +
+    theme_minimal() +
+    theme(panel.grid = element_blank())
+  ggsave(filename = paste0(plots_folder, "/cor_gebvs_models_per_env.pdf"),
+         plot = plot_cor_gebvs_per_env, device = "pdf")
+  
+  
 }
 
 
@@ -262,6 +308,7 @@ for (trait in traits) {
 #### debug ----
 
 # results_folder <- "analysis/marker_effects"
-# traits <- c("EHT", "Moisture", "PHT", "TWT", "YLD")
-# models <- c("rrblup", "bayescpi", "mrr", "gwas")
+# outfolder <- "analysis/marker_effects/qc"
+# traits <- "YLD"
+# models <- c("rrblup", "gwas")
 # no_missing_genotypes <- FALSE
