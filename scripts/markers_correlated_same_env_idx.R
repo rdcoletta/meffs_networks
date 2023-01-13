@@ -178,40 +178,50 @@ for (idx in names(mod_env_idx_cor_split)) {
     cat ("...done!\n", sep = "")
 
     # read LD file
-    ld_file <- fread(gsub(".txt", ".ld.gz", list_markers_for_ld), header = TRUE, data.table = FALSE)
-
-    # substitute the name of markers in LD to each other with a representative marker
-    for (mod in names(list_markers_mod_idx)) {
-
-      for (marker in 1:length(list_markers_mod_idx[[mod]])) {
-        # get marker name
-        marker_name <- list_markers_mod_idx[[mod]][marker]
-        # check which markers are in LD with it
-        marker_ld <- ld_file[ld_file$SNP_A == marker_name | ld_file$SNP_B == marker_name, c("SNP_A", "SNP_B")]
-        # if there's at least one marker in LD
-        if (nrow(marker_ld) > 0) {
-          # get the name of the first marker in the group
-          # (it will always be the same because file is ordered by position)
-          marker_ld <- unique(unlist(marker_ld))[1]
-          # change the marker name to the representative marker
-          list_markers_mod_idx[[mod]][marker] <- marker_ld
+    ld_file <- gsub(".txt", ".ld.gz", list_markers_for_ld)
+    
+    if (file.exists(ld_file)) {
+      
+      # load ld file
+      ld_file <- fread(ld_file, header = TRUE, data.table = FALSE)
+      
+      # substitute the name of markers in LD to each other with a representative marker
+      for (mod in names(list_markers_mod_idx)) {
+        
+        for (marker in 1:length(list_markers_mod_idx[[mod]])) {
+          # get marker name
+          marker_name <- list_markers_mod_idx[[mod]][marker]
+          # check which markers are in LD with it
+          marker_ld <- ld_file[ld_file$SNP_A == marker_name | ld_file$SNP_B == marker_name, c("SNP_A", "SNP_B")]
+          # if there's at least one marker in LD
+          if (nrow(marker_ld) > 0) {
+            # get the name of the first marker in the group
+            # (it will always be the same because file is ordered by position)
+            marker_ld <- unique(unlist(marker_ld))[1]
+            # change the marker name to the representative marker
+            list_markers_mod_idx[[mod]][marker] <- marker_ld
+          }
         }
+        
+        # keep redundant marker names
+        list_markers_mod_idx[[mod]] <- unique(list_markers_mod_idx[[mod]])
+        
       }
-
-      # keep redundant marker names
-      list_markers_mod_idx[[mod]] <- unique(list_markers_mod_idx[[mod]])
-
+      
+      if (length(list_markers_mod_idx) > 1) {
+        
+        # plot intersections of markers
+        upset_plot <- upset(fromList(list_markers_mod_idx), order.by = "freq", mb.ratio = c(0.55, 0.45), nsets = 100)
+        pdf(file = paste0(output_folder, "/markers_cor_", idx, ".pdf"), onefile = FALSE, width = 12, height = 10)
+        print(upset_plot)
+        dev.off()
+        
+      }
+      
+    } else {
+      cat("\n--- The file ", ld_file, "does not exist because there were no markers in LD ---\n\n")
     }
-
-    if (length(list_markers_mod_idx) > 1) {
-
-      # plot intersections of markers
-      upset_plot <- upset(fromList(list_markers_mod_idx), order.by = "freq", mb.ratio = c(0.55, 0.45), nsets = 100)
-      pdf(file = paste0(output_folder, "/markers_cor_", idx, ".pdf"), onefile = FALSE, width = 12, height = 10)
-      print(upset_plot)
-      dev.off()
-
-    }
+    
   }
 }
 
