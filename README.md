@@ -1,7 +1,7 @@
 # Marker effects networks
 by Rafael Della Coletta and Candice Hirsch
 
-> The objective of this project is to determine whether we can create networks of marker effects from a maize population across multiple environments. If this is possible, then the question becomes whether or not we can extract useful information about which markers (or modules of markers) are more associated with environmental adaptability.
+> The objective of this project was to determine whether or not we could create networks of marker effects from a maize population across multiple environments, and identify which markers (or modules of markers) were associated with environmental adaptability.
 
 
 
