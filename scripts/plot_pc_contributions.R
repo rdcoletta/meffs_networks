@@ -168,7 +168,7 @@ for (PC in unique(pca_contrib$pc)) {
     labs(x = "Season stage", y = "Total contributions (%)") +
     theme_bw()
   # save plot
-  outfile <- paste0(output_folder, "/summary_contributions.", PC, ".pdf")
+  outfile <- paste0(output_folder, "/summary_contributions1.", PC, ".pdf")
   ggsave(plot_summary_pc, filename = outfile, device = "pdf", height = 5, width = 8)
   
   # pca_contrib %>% 
@@ -180,6 +180,80 @@ for (PC in unique(pca_contrib$pc)) {
   #   geom_col(aes(x = idx, y = contrib))
   
 }
+
+
+#### alternative way to plot PC contributions ----
+
+pca_contrib <- fread(pca_contrib_file, header = TRUE, data.table = FALSE)
+
+pca_contrib[, c("idx", "interval")] <- do.call(rbind, lapply(pca_contrib$env_idx, function(idx) {
+  idx <- unlist(strsplit(idx, split = "_"))
+  if (length(idx) > 2) idx <- c(paste0(idx[1:(length(idx) - 1)], collapse = "_"), idx[length(idx)])
+  return(idx)
+}))
+
+pca_contrib <- pca_contrib %>%
+  select(-env_idx) %>% 
+  pivot_longer(-c(idx, interval), names_to = "pc", values_to = "contrib") %>% 
+  mutate(interval = as.numeric(interval))
+
+for (PC in unique(pca_contrib$pc)) {
+  
+  plot_summary_pc2 <- pca_contrib %>%
+    filter(pc == PC) %>%
+    arrange(desc(contrib)) %>%
+    ggplot() +
+    facet_wrap(~ idx, nrow = 3) +
+    geom_line(aes(x = interval, y = contrib, group = 1), show.legend = FALSE) +
+    labs(title = PC, x = "Time interval", y = "Total contributions (%)") +
+    theme_bw()
+  # save plot
+  outfile <- paste0(output_folder, "/summary_contributions2.", PC, ".pdf")
+  ggsave(plot_summary_pc2, filename = outfile, device = "pdf", height = 5, width = 8)
+  
+  
+  plot_summary_pc3 <- pca_contrib %>%
+    filter(pc == PC) %>%
+    arrange(desc(contrib)) %>%
+    ggplot() +
+    facet_wrap(~ idx, nrow = 3) +
+    geom_point(aes(x = interval, y = contrib, group = 1), show.legend = FALSE) +
+    labs(title = PC, x = "Time interval", y = "Total contributions (%)") +
+    theme_bw()
+  # save plot
+  outfile <- paste0(output_folder, "/summary_contributions3.", PC, ".pdf")
+  ggsave(plot_summary_pc3, filename = outfile, device = "pdf", height = 5, width = 8)
+  
+
+  plot_summary_pc4 <- pca_contrib %>%
+    filter(pc == PC) %>%
+    arrange(desc(contrib)) %>%
+    ggplot(aes(x = interval, y = contrib)) +
+    facet_wrap(~ idx, nrow = 3) +
+    geom_point(size = 1, show.legend = FALSE) +
+    geom_smooth() +
+    labs(title = PC, x = "Time interval", y = "Total contributions (%)") +
+    theme_bw()
+  # save plot
+  outfile <- paste0(output_folder, "/summary_contributions4.", PC, ".pdf")
+  ggsave(plot_summary_pc4, filename = outfile, device = "pdf", height = 5, width = 8)
+  
+  
+  plot_summary_pc5 <- pca_contrib %>%
+    filter(pc == PC) %>%
+    arrange(desc(contrib)) %>%
+    ggplot(aes(x = interval, y = contrib)) +
+    facet_wrap(~ idx, nrow = 3) +
+    # geom_point(size = 1, show.legend = FALSE) +
+    geom_smooth(se = TRUE) +
+    labs(title = PC, x = "Time interval", y = "Total contributions (%)") +
+    theme_bw()
+  # save plot
+  outfile <- paste0(output_folder, "/summary_contributions5.", PC, ".pdf")
+  ggsave(plot_summary_pc5, filename = outfile, device = "pdf", height = 5, width = 8)
+  
+}
+
 
 
 
