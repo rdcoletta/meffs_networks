@@ -1,4 +1,5 @@
 library(data.table)
+library(readxl)
 library(dplyr)
 library(tidyr)
 library(tibble)
@@ -11,8 +12,11 @@ library(ggnetwork)
 library(factoextra)
 library(ggh4x)
 library(ggrepel)
+library(ggridges)
+library(viridis)
 library(UpSetR)
 enableWGCNAThreads()
+allowWGCNAThreads()
 options(stringsAsFactors = FALSE)
 dir.create("figures")
 
@@ -24,6 +28,7 @@ dir.create("figures")
 
 input_folder <- "analysis/marker_effects/YLD"
 blues_file <- "data/1stStage_BLUEs.YLD-per-env.txt"
+env_idx_file <- "data/env_covariables/env_covariables_means_per_intervals.txt"
 output_folder <- "figures"
 
 # create empty data frames to store results across models
@@ -47,79 +52,223 @@ means <- fread(blues_file, header = TRUE, data.table = FALSE)
 means <- data.frame(means, model = "real_pheno")
 colnames(means) <- colnames(gebvs_all)
 # correct env names for compatibility
-means$env <- gsub("-", ".", means$env)
+gebvs_all$env <- gsub(".", "-", gebvs_all$env, fixed = TRUE)
 # append means to gebv df
 gebvs_all <- rbind(gebvs_all, means)
+# adjust factor levels for plotting
+gebvs_all$model <- factor(gebvs_all$model, levels = c("rrblup", "gwas", "real_pheno"))
 
 # compare distribution of gebvs with real data
 plot_boxplot_gebvs <- ggplot(gebvs_all) +
   geom_boxplot(aes(x = env, y = gebv, fill = model)) +
-  labs(x = "Environments", y = "Yield", fill = "Data type") +
+  labs(x = "Environments", y = "Grain yield", fill = "Data type") +
   scale_fill_manual(values = c("#1b9e77", "#d95f02", "#7570b3"),
                     labels = c("RR-BLUP", "GWAS", "Observed")) +
-  theme_bw()
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10))
 ggsave(filename = paste0(output_folder, "/fig_1a.png"), plot = plot_boxplot_gebvs,
-       device = "png", dpi = 300, units = "in", width = 8, height = 4)
+       device = "png", dpi = 350, units = "in", width = 8, height = 2)
 
-# clean R environment
-rm(list = ls())
 
 ##### b #####
 
-# output from 'scripts/pick_soft_threshold.R'
-# network selected:
-# - meff model: rrblup
-# - norm method: zscore
+# load and format data
+env_idx <- fread(env_idx_file, header = TRUE, data.table = FALSE)
+env_idx <- data.frame(env = env_idx$env, idx = paste(env_idx$covariable, env_idx$intervals, sep = "_"), value = env_idx$value)
+env_idx <- pivot_wider(env_idx, names_from = "idx", values_from = "value")
+env_idx <- column_to_rownames(env_idx, var = "env")
+
+# correlate variables
+cor_env_idx <- cor(as.matrix(env_idx))
+
+# plot heatmap
+png(paste0(output_folder, "/fig_1b.png"), units = "in", res = 350, width = 4, height = 3)
+pheatmap(mat = cor_env_idx, angle_col = 0, show_colnames = FALSE, show_rownames = FALSE, legend_breaks = seq(-1, 1, 0.5), legend_labels = c(-1, -0.5, 0, 0.5, 1))
+dev.off()
 
 ##### c #####
 
-# output from 'scripts/build_meff_network.R'
-# network selected:
-# - meff model: rrblup
-# - norm method: zscore
+# load data
+env_idx <- fread(env_idx_file, header = TRUE, data.table = FALSE)
+env_idx <- env_idx %>% 
+  unite(covariable:intervals, col = "covariable", sep = "_") %>% 
+  pivot_wider(names_from = "covariable", values_from = "value") %>% 
+  column_to_rownames(var = "env") %>% 
+  as.matrix()
+
+# perform PCA
+pca <- prcomp(env_idx, scale = TRUE)
+pca_results <- pca$x[match(rownames(env_idx), rownames(pca$x)), ]
+pca_results <- rownames_to_column(data.frame(pca_results), var = "env")
+pca_results <- pivot_longer(pca_results, -env, names_to = "covariable", values_to = "value")
+eigs <- pca$sdev^2
+
+# plot PCA
+png(paste0(output_folder, "/fig_1c.png"), units = "in", res = 350, width = 4, height = 3)
+fviz_pca_ind(pca, col.ind = "grey30", repel = TRUE, labelsize = 3) +
+  scale_x_continuous(breaks = seq(-30, 30, 15)) +
+  scale_y_continuous(breaks = seq(-20, 20, 10)) +
+  scale_color_viridis_c(option = "C", breaks = seq(0, 30, 5), end = 0.8) +
+  coord_cartesian(xlim = c(-30, 30), ylim = c(-20, 20)) +
+  labs(x = paste0("PC1 (", round(eigs[1] / sum(eigs), digits = 3) * 100, "%)"),
+       y = paste0("PC2 (", round(eigs[2] / sum(eigs), digits = 3) * 100, "%)"),
+       color = "Contributions") +
+  theme_bw() +
+  theme(title = element_blank(),
+        panel.grid = element_blank(),
+        axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10),
+        legend.key.size = unit(0.2, 'in'),
+        legend.title = element_text(size = 8), #change legend title font size
+        legend.text = element_text(size = 8)) #change legend text font size
+dev.off()
+
+# clean R environment
+rm(list = ls())
 
 
 
 #### figure 2 ----
 
+results_folder <- "analysis/networks/YLD"
+qc_networks_file <- paste0(results_folder, "/summary_qc_networks.txt")
+net_alias_file <- "supp_materials/supp_table6.xlsx"
+output_folder <- "figures"
+
 ##### a #####
 
-# output from 'scripts/define_network_modules.R'
-# network selected:
-# - meff model: rrblup
-# - norm method: zscore
-# - min mod size: 50
-# - panStage: off
+# create empty df to store results
+sft_all <- data.frame(stringsAsFactors = FALSE)
+
+for (model in c("rrblup", "gwas")) {
+  for (norm in c("minmax", "zscore")) {
+    
+    if (norm == "minmax") {
+      for (cv in c(0.05, 0.075, 0.1, 0.125, 0.15, 0.175, 0.2, 0.25)) {
+        
+        # load file
+        sft_file <- paste0(results_folder, "/meff_", model, "/norm_", norm,
+                           "/cv_thresholds/scale-free_topology_fit_index.cv-", cv, ".txt")
+        sft_results <- fread(sft_file, header = TRUE, data.table = FALSE)
+        # get results
+        sft_all <- rbind(sft_all, data.frame(model = model, norm = norm,  cv = cv, sft_results))
+        
+      }
+    }
+    
+    if (any(norm == "zscore" | norm == "none")) {
+      for (cv in c(0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 1)) {
+        
+        # load file
+        sft_file <- paste0(results_folder, "/meff_", model, "/norm_", norm,
+                           "/cv_thresholds/scale-free_topology_fit_index.cv-", cv, ".txt")
+        sft_results <- fread(sft_file, header = TRUE, data.table = FALSE)
+        # get results
+        sft_all <- rbind(sft_all, data.frame(model = model, norm = norm,  cv = cv, sft_results))
+        
+      }
+    }
+    
+  }
+}
+rm(sft_results)
+
+# add signed R2 values
+sft_all$signed_R2 <- -sign(sft_all$slope) * sft_all$SFT.R.sq
+
+# plot power distribution
+sft_plot <- sft_all %>%
+  mutate(norm = factor(norm, levels = c("minmax", "zscore"), labels = c("Minmax", "Z-score")),
+         model = factor(model, levels = c("gwas", "rrblup"), labels = c("GWAS", "RR-BLUP"))) %>% 
+  ggplot(aes(x = Power, y = signed_R2, group = as.factor(cv), color = as.factor(cv))) +
+  facet_grid(norm ~ model) +
+  geom_line() +
+  geom_point(size = 1.5) +
+  coord_cartesian(ylim = c(-1, 1)) +
+  scale_color_viridis_d(end = 0.9, option = "B", direction = -1) +
+  scale_x_continuous(breaks = seq(0, 30, 5)) +
+  scale_y_continuous(breaks = seq(-1, 1, 1)) +
+  labs(x = "Power", y = bquote("Scale free topology model fit, signed" ~ R^2), color = "CV cut-off") +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 10),
+        axis.text = element_text(size = 10),
+        legend.direction = "vertical") +
+guides(color = guide_legend(ncol = 2))
+ggsave(filename = paste0(output_folder, "/fig_2a.png"), plot = sft_plot,
+       device = "png", dpi = 350, units = "in", width = 8, height = 3)
+
 
 ##### b #####
 
-input_folder <- "analysis/networks/YLD/meff_rrblup/norm_zscore/min_mod_size_50/pamStage_off"
-module_stats_file <- paste0(input_folder, "/kDiff_per_module.txt")
-output_folder <- "figures"
-type_connections <- "TOM"
-
-# read module stats
-module_stats <- fread(module_stats_file, header = TRUE, data.table = FALSE)
-module_stats$module <- factor(module_stats$module)
-# format table
-module_stats <- module_stats %>% 
-  filter(source == type_connections) %>% 
-  select(marker, module, kDiff, kRatio, clusterCoeff) %>% 
-  pivot_longer(-c(marker, module), names_to = "stat", values_to = "value") %>% 
-  mutate(stat = factor(stat, levels = c("kDiff", "kRatio", "clusterCoeff")))
-
-# plot kDiff among markers
-# (i.e. difference between number of connections within vs outside modules)
-plot_mod_stats <- ggplot(module_stats) +
-  facet_wrap(~ stat, nrow = 3, scales = "free_y") +
-  geom_boxplot(aes(x = module, y = value, fill = module), show.legend = FALSE) +
-  scale_fill_manual(values = levels(module_stats$module)) +
-  labs(x = "Modules", y = "Values") +
+plot_total_markers <- sft_all %>% 
+  mutate(norm = factor(norm, levels = c("minmax", "zscore"), labels = c("Minmax", "Z-score")),
+         model = factor(model, levels = c("gwas", "rrblup"), labels = c("GWAS", "RR-BLUP"))) %>% 
+  group_by(model, norm, cv) %>% 
+  summarize(total.markers = mean(total.markers, na.rm = TRUE)) %>% 
+  ggplot(aes(x = as.factor(cv), y = total.markers)) +
+  facet_grid2(norm ~ model, scales = "free_x", independent = "x") +
+  geom_col() +
+  # scale_y_continuous(breaks = seq(0, 10000, 1000)) +
+  labs(x = "CV cut-off", y = "Total markers in network") +
   theme_bw() +
-  theme(panel.grid.minor =  element_blank(),
-        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
-ggsave(filename = paste0(output_folder, "/fig_2b.png"), plot = plot_mod_stats,
-       device = "png", dpi = 300, units = "in", width = 8, height = 6)
+  theme(panel.grid = element_blank(),
+        axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10),
+        axis.text.x = element_text(size = 8, angle = 90, hjust = 1, vjust = 0.5))
+ggsave(filename = paste0(output_folder, "/fig_2b.png"), plot = plot_total_markers,
+       device = "png", dpi = 350, units = "in", width = 4, height = 3)
+
+##### c #####
+
+# get network aliases
+net_alias <- read_excel(net_alias_file)
+net_alias$order <- paste(net_alias$Model, net_alias$Normalization, net_alias$`Minimum module size`, net_alias$pamStage, sep = "_")
+
+# load qc file
+qc_results <- fread(qc_networks_file, header = TRUE, data.table = FALSE)
+# adjust data to match aliases order
+qc_results <- qc_results %>% 
+  filter(source == "adjacency") %>%
+  mutate(norm_method = factor(norm_method, levels = c("minmax", "zscore"), labels = c("Minmax", "Z-score")),
+         meff_model = factor(meff_model, levels = c("gwas", "rrblup"), labels = c("GWAS", "RR-BLUP"))) %>% 
+  unite(col = "order", meff_model:pamStage, remove = FALSE) %>% 
+  mutate(order = match(order, net_alias$order)) %>% 
+  arrange(order)
+
+# plot markers per module
+plot_markers_per_mod <- qc_results %>% 
+  group_by(order, meff_model, norm_method, minsize, pamStage, module) %>%
+  summarize(n_markers = n()) %>%
+  ungroup() %>%
+  group_by(order, meff_model, norm_method, minsize, pamStage) %>% 
+  mutate(n_modules = n()) %>%
+  ungroup() %>%
+  mutate(n_markers_no_grey = NA,
+         n_markers_no_grey = case_when(module != "grey" ~ n_markers)) %>% 
+  pivot_longer(c(n_markers, n_markers_no_grey, n_modules), names_to = "metric", values_to = "values") %>%
+  mutate(order = factor(order),
+         metric = factor(metric, levels = c("n_modules", "n_markers", "n_markers_no_grey"),
+                         labels = c("Total modules", "Unassigned markers", "Markers per module"))) %>%
+  ggplot() +
+  facet_wrap(~ metric, nrow = 3, scales = "free_y") +
+  geom_col(data = function(x) subset(x, metric == "Total modules"),
+           aes(x = order, y = values), fill = "grey40", show.legend = FALSE) +
+  geom_col(data = function(x) subset(x, metric == "Unassigned markers"  & module == "grey"),
+           aes(x = order, y = values), fill = "grey", show.legend = FALSE) +
+  geom_boxplot(data = function(x) subset(x, metric == "Markers per module"),
+               aes(x = order, y = values), fill = "grey60", outlier.size = 0.25, show.legend = FALSE) +
+  labs(x = "Networks", y = "Count") +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10),
+        axis.text.x = element_text(size = 8))
+ggsave(filename = paste0(output_folder, "/fig_2c.png"), plot = plot_markers_per_mod,
+       device = "png", dpi = 350, units = "in", width = 4, height = 3)
 
 # clean R environment
 rm(list = ls())
@@ -128,28 +277,86 @@ rm(list = ls())
 
 #### figure 3 ----
 
-input_folder <- "analysis/networks/YLD/meff_rrblup/norm_zscore/min_mod_size_50/pamStage_off"
+results_folder <- "analysis/networks/YLD"
+qc_networks_file <- paste0(results_folder, "/summary_qc_networks.txt")
+net_alias_file <- "supp_materials/supp_table6.xlsx"
 output_folder <- "figures"
-meff_mod <- paste0(input_folder, "/define_network_modules.RData")
 
-# load data
-load(meff_mod)
+# get network aliases
+net_alias <- read_excel(net_alias_file)
+net_alias$order <- paste(net_alias$Model, net_alias$Normalization, net_alias$`Minimum module size`, net_alias$pamStage, sep = "_")
 
-# plot heatmap
-png(paste0(output_folder, "/fig_3.png"), units = "in", res = 300, width = 8, height = 8)
-pheatmap(mat = t(MEs), angle_col = 0, main = "Modules eigenvalues per environment")
-dev.off()
+# load qc file
+qc_results <- fread(qc_networks_file, header = TRUE, data.table = FALSE)
+# adjust data to match aliases order
+qc_results <- qc_results %>% 
+  filter(source == "adjacency") %>%
+  mutate(norm_method = factor(norm_method, levels = c("minmax", "zscore"), labels = c("Minmax", "Z-score")),
+         meff_model = factor(meff_model, levels = c("gwas", "rrblup"), labels = c("GWAS", "RR-BLUP"))) %>% 
+  unite(col = "order", meff_model:pamStage, remove = FALSE) %>% 
+  mutate(order = match(order, net_alias$order)) %>% 
+  arrange(order)
+
+##### a #####
+
+plot_k_metrics <- qc_results %>%
+  filter(module != "grey") %>%
+  group_by(order, meff_model, norm_method, minsize, pamStage, module) %>%
+  mutate(n_markers = n()) %>%
+  ungroup() %>%
+  pivot_longer(c(kDiff, clusterCoeff, kRatio), names_to = "metric", values_to = "values") %>%
+  mutate(module = factor(module),
+         order = factor(order)) %>% 
+  ggplot() +
+  facet_wrap(~ metric, nrow = 3, scales = "free_y") +
+  geom_boxplot(aes(x = order, y = values), fill = "grey80", outlier.size = 0.25, show.legend = FALSE) +
+  facetted_pos_scales(y = list(metric == "clusterCoeff" ~ scale_y_continuous(breaks = seq(0, 0.4, 0.2)),
+                               metric == "kDiff" ~ scale_y_continuous(breaks = seq(-20, 20, 20)),
+                               metric == "kRatio" ~ scale_y_continuous(breaks = seq(-1, 1, 1)))) +
+  labs(x = "Networks", y = "Count") +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10))
+ggsave(filename = paste0(output_folder, "/fig_3a.png"), plot = plot_k_metrics,
+       device = "png", dpi = 350, units = "in", width = 4, height = 3)
+
+##### b #####
+
+plot_pos_kDiff <- qc_results %>%
+  filter(module != "grey") %>%
+  group_by(order, meff_model, norm_method, minsize, pamStage, module) %>%
+  summarize(n_markers = n(),
+            median_kDiff = median(kDiff),
+            mean_kDiff = mean(kDiff),
+            se_kDiff = mean_kDiff / sqrt(n_markers)) %>%
+  ungroup() %>%
+  group_by(order, meff_model, norm_method, minsize, pamStage) %>% 
+  summarize(n_modules = n(),
+            positive_mean_kDiff = round(sum(mean_kDiff > 0) / n_modules, digits = 2)) %>%
+  ungroup() %>%
+  pivot_longer(positive_mean_kDiff, names_to = "metric", values_to = "values") %>%
+  mutate(order = factor(order)) %>%
+  ggplot() +
+  geom_col(aes(x = order, y = values), fill = "grey40", show.legend = FALSE) +
+  labs(x = "Networks", y = "Proportion of modules\nwith mean kDiff > 0") +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 10),
+        axis.text.x = element_text(size = 8),
+        axis.text.y = element_text(size = 10))
+ggsave(filename = paste0(output_folder, "/fig_3b.png"), plot = plot_pos_kDiff,
+       device = "png", dpi = 350, units = "in", width = 4, height = 2)
 
 # clean R environment
 rm(list = ls())
 
 
 
-#### figure 4 ----
+#### figure 4 -----
 
-##### a #####
-
-input_folder <- "analysis/networks/YLD/meff_rrblup/norm_zscore/min_mod_size_50/pamStage_off"
+input_folder <- "analysis/networks/YLD/meff_gwas/norm_minmax/min_mod_size_25/pamStage_off"
 meff_mod_file <- paste0(input_folder, "/define_network_modules.RData")
 modules_filename <- paste0(input_folder, "/kDiff_per_module.txt")
 mod_ld_folder <- paste0(input_folder, "/modules_ld")
@@ -157,8 +364,28 @@ output_folder <- "figures"
 type_connect_str <- "TOM"
 soft_threshold <- 24
 edge_threshold <- 0.01
-mod <- "darkolivegreen"
+mod <- "firebrick2"
 ld_module <- paste0(mod_ld_folder, "/ld_markers_", mod, ".ld.gz")
+
+##### a #####
+
+# load ld file
+ld_module <- fread(ld_module, header = TRUE, data.table = FALSE)
+
+# plot distribution r2 for all markers
+ld_dist_plot <- ggplot(ld_module, aes(x = R2)) +
+  geom_histogram(data = subset(ld_module, R2 >= 0.9), color = "black", fill = "gold2", binwidth = 0.05) +
+  geom_histogram(data = subset(ld_module, R2 < 0.9), color = "black", fill = "grey50", binwidth = 0.05) +
+  coord_cartesian(xlim = c(0, 1)) +
+  labs(x = bquote("Linkage disequilibrium" ~ (r^2)), y = "Count") +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10))
+ggsave(filename = paste0(output_folder, "/fig_4a.png"), plot = ld_dist_plot,
+       device = "png", dpi = 350, units = "in", width = 4, height = 2)
+
+##### b #####
 
 # load data
 load(meff_mod_file)
@@ -183,37 +410,6 @@ mod_meff <- marker_effects[, mod_markers]
 mod_ME <- MEs[, paste0("ME", mod), drop = FALSE]
 mod_ME <- rownames_to_column(mod_ME, var = "env")
 colnames(mod_ME)[2] <- "ME"
-
-# plot module meffs and eigenvalues across environments
-meff_plot <- data.frame(t(mod_meff)) %>% 
-  rownames_to_column(var = "marker") %>% 
-  pivot_longer(-marker, names_to = "env", values_to = "effects") %>% 
-  ggplot() +
-  geom_line(aes(x = env, y = effects, group = marker), alpha = 0.2, color = "grey50") +
-  geom_line(data = mod_ME, aes(x = env, y = ME, group = 1), size = 2, color = mod) +
-  labs(title = bquote("Effects of markers in the" ~ bold(.(mod)) ~ "module across envs"),
-       x = "Environments", y = "Marker effects") +
-  theme_bw() +
-  theme(panel.grid = element_blank())
-ggsave(filename = paste0(output_folder, "/fig_4a.png"), plot = meff_plot,
-       device = "png", dpi = 300, units = "in", width = 7, height = 4)
-
-##### b #####
-
-# load ld file
-ld_module <- fread(ld_module, header = TRUE, data.table = FALSE)
-
-# plot distribution r2 for all markers
-ld_dist_plot <- ggplot(ld_module, aes(x = R2)) +
-  geom_histogram(data = subset(ld_module, R2 >= 0.9), fill = "firebrick") +
-  geom_histogram(data = subset(ld_module, R2 < 0.9), fill = "grey50") +
-  labs(title = paste0("LD distribution of ", mod, " module"),
-       x = bquote(R^2), y = "Count") +
-  theme_bw()
-ggsave(filename = paste0(output_folder, "/fig_4b.png"), plot = ld_dist_plot,
-       device = "png", dpi = 300, units = "in", width = 4, height = 4)
-
-##### c #####
 
 # calculate TOM for that module
 mod_TOM <- TOMsimilarityFromExpr(mod_meff, power = soft_threshold, TOMType = "unsigned")
@@ -261,14 +457,57 @@ mod_network <- ggnetwork(mod_network, layout = "fruchtermanreingold", weights = 
 # visualize network by LD status
 plot_net_ld <- ggplot() +
   geom_edges(data = subset(mod_network, LD == FALSE),
-             aes(x = x, y = y, xend = xend, yend = yend), color = "grey50", alpha = 0.2) +
+             aes(x = x, y = y, xend = xend, yend = yend), color = "grey50", size = 1, alpha = 0.2) +
   geom_edges(data = subset(mod_network, LD == TRUE),
-             aes(x = x, y = y, xend = xend, yend = yend), color = "firebrick") +
+             aes(x = x, y = y, xend = xend, yend = yend), color = "gold3", size = 1) +
   geom_nodes(data = mod_network,
-             aes(x = x, y = y), color = "black") +
+             aes(x = x, y = y), color = "black", size = 3) +
   theme_blank()
-ggsave(filename = paste0(output_folder, "/fig_4c.png"), plot = plot_net_ld,
-       device = "png", dpi = 300, units = "in", width = 6, height = 6)
+ggsave(filename = paste0(output_folder, "/fig_4b.png"), plot = plot_net_ld,
+       device = "png", dpi = 350, units = "in", width = 4, height = 3)
+
+##### c (MSI) #####
+# ran this on MSI
+
+# get network aliases
+net_alias_file <- "supp_materials/supp_table6.xlsx"
+net_alias <- read_excel(net_alias_file)
+net_alias$order <- paste(net_alias$Model, net_alias$Normalization, net_alias$`Minimum module size`, net_alias$pamStage, sep = "_")
+
+# file name
+ld_results_file <- "analysis/networks/YLD/summary_ld_per_network.txt.gz"
+# ld_results_file <- "analysis/networks/YLD/summary_ld_per_network.TEST.txt"
+
+# load file
+ld_results <- fread(ld_results_file, header = TRUE, data.table = FALSE)
+# adjust files to match network aliases
+ld_results <- ld_results %>% 
+  mutate(norm_method = factor(norm_method, levels = c("minmax", "zscore"), labels = c("Minmax", "Z-score")),
+         meff_model = factor(meff_model, levels = c("gwas", "rrblup"), labels = c("GWAS", "RR-BLUP"))) %>% 
+  unite(col = "order", meff_model:pamStage, remove = FALSE) %>% 
+  mutate(order = match(order, net_alias$order)) %>% 
+  arrange(order)
+
+# create plot
+ld_dist <- ld_results %>%
+  mutate(order = factor(order)) %>%
+  ggplot(aes(x = R2, y = order, fill = ..x..)) +
+  geom_density_ridges_gradient(scale = 8, rel_min_height = 0.001, size = 0.1) +
+  scale_fill_binned(breaks = seq(0, 1, 0.1), guide = guide_bins(show.limits = TRUE)) +
+  labs(x = bquote("Linkage disequilibrium" ~ (r^2)), y = "Networks") +
+  theme_bw() +
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10)) +
+  binned_scale(aesthetics = "fill", scale_name = "custom", 
+               palette = ggplot2:::binned_pal(scales::manual_pal(values = c(rep("#80808080", 8), rep("gold2", 2)))),
+               guide = "bins",
+               breaks = seq(0, 1, 0.1), limits = c(0, 1), show.limits = TRUE)
+ggsave(filename = paste0(output_folder, "/fig_4c.pdf"), plot = ld_dist,
+       device = "pdf", units = "in", width = 4, height = 6)
+
+# converted to "png" on my Mac (300dpi)
 
 # clean R environment
 rm(list = ls())
@@ -277,73 +516,22 @@ rm(list = ls())
 
 #### figure 5 ----
 
-env_idx_file <- "data/env_covariables/env_covariables_means_per_intervals.txt"
+input_folder <- "analysis/networks/YLD/meff_gwas/norm_minmax/min_mod_size_25/pamStage_off"
 output_folder <- "figures"
-example_idx <- "T2M"
-
-##### a #####
-
-# load and format data
-env_idx <- fread(env_idx_file, header = TRUE, data.table = FALSE)
-env_idx <- env_idx %>% 
-  filter(covariable == example_idx) %>% 
-  select(-covariable)
-
-# plot env idx across intervals
-env_idx_plot <- ggplot(env_idx, aes(x = intervals, y = value, color = env)) +
-  geom_line(aes(group = env), show.legend = FALSE) +
-  facet_wrap(~ env, nrow = 3, ncol = 3) +
-  labs(x = "Time intervals", y = "Temperature (centered and scaled)") +
-  theme_bw() +
-  theme(panel.grid.minor = element_blank())
-ggsave(filename = paste0(output_folder, "/fig_5a.png"), plot = env_idx_plot,
-       device = "png", dpi = 300, units = "in", width = 6, height = 6)
-
-##### b #####
-
-# load and format data
-env_idx <- fread(env_idx_file, header = TRUE, data.table = FALSE)
-env_idx <- data.frame(env = env_idx$env, idx = paste(env_idx$covariable, env_idx$intervals, sep = "_"), value = env_idx$value)
-env_idx <- pivot_wider(env_idx, names_from = "idx", values_from = "value")
-env_idx <- column_to_rownames(env_idx, var = "env")
-
-# correlate variables
-cor_env_idx <- cor(as.matrix(env_idx))
-
-# plot heatmap
-png(paste0(output_folder, "/fig_5b.png"), units = "in", res = 300, width = 6, height = 4)
-pheatmap(mat = cor_env_idx, angle_col = 0, main = "Correlation among environmental parameters",
-         show_colnames = FALSE, show_rownames = FALSE)
-dev.off()
-
-##### c #####
+meff_mod <- paste0(input_folder, "/define_network_modules.RData")
 
 # load data
-env_idx <- fread(env_idx_file, header = TRUE, data.table = FALSE)
-env_idx <- env_idx %>% 
-  unite(covariable:intervals, col = "covariable", sep = "_") %>% 
-  pivot_wider(names_from = "covariable", values_from = "value") %>% 
-  column_to_rownames(var = "env") %>% 
-  as.matrix()
+load(meff_mod)
+rownames(MEs) <- gsub(".", "-", rownames(MEs), fixed = TRUE)
+colnames(MEs) <- gsub("^ME", "", colnames(MEs), perl = TRUE)
 
-# perform PCA
-pca <- prcomp(env_idx, scale = TRUE)
-pca_results <- pca$x[match(rownames(env_idx), rownames(pca$x)), ]
-pca_results <- rownames_to_column(data.frame(pca_results), var = "env")
-pca_results <- pivot_longer(pca_results, -env, names_to = "covariable", values_to = "value")
+# plot heatmap
+png(paste0(output_folder, "/fig_5.png"), units = "in", res = 350, width = 8, height = 4)
+pheatmap(mat = MEs, angle_col = 90, fontsize_col = 6)
+dev.off()
 
-# plot PCA
-png(paste0(output_folder, "/fig_5c.png"), units = "in", res = 300, width = 5, height = 3)
-fviz_pca_ind(pca, col.ind = "contrib", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), repel = TRUE) +
-  scale_x_continuous(breaks = seq(-30, 30, 15)) +
-  scale_y_continuous(breaks = seq(-20, 20, 10)) +
-  scale_color_viridis_c(option = "C", breaks = seq(0, 30, 5), end = 0.8) +
-  coord_cartesian(xlim = c(-30, 30), ylim = c(-20, 20)) +
-  labs(title = "PCA of environmental parameters", x = "PC1", y = "PC2", color = "Contributions") +
-  theme_bw() +
-  theme(legend.key.size = unit(0.2, 'in'),
-        legend.title = element_text(size = 8), #change legend title font size
-        legend.text = element_text(size = 8)) #change legend text font size
+png(paste0(output_folder, "/figure5.png"), units = "in", res = 350, width = 8, height = 4)
+pheatmap(mat = MEs, angle_col = 90, fontsize_col = 6)
 dev.off()
 
 # clean R environment
@@ -353,15 +541,16 @@ rm(list = ls())
 
 #### figure 6 ----
 
-model <- "rrblup"
-norm <- "zscore"
-size <- "50"
+model <- "gwas"
+norm <- "minmax"
+size <- "25"
 pam <- "off"
 meff_mod_Rdata <- paste0("analysis/networks/YLD/meff_", model, "/norm_", norm, "/min_mod_size_", size,
                          "/pamStage_", pam, "/define_network_modules.RData")
 mod_env_idx_cor_file <- "analysis/networks/YLD/module-env-idx_per_network.pca.txt"
 env_idx_file <- "data/env_covariables/pca_env_idx.txt"
 output_folder <- "figures"
+pca_contrib_file <- "data/env_covariables/pca_contributions.txt"
 
 ##### a ######
 
@@ -370,7 +559,7 @@ mod_env_idx_results <- fread(mod_env_idx_cor_file, header = TRUE, data.table = F
 
 # select network of interest
 mod_env_idx_results <- subset(mod_env_idx_results, meff_model == model & norm_method == norm &
-                              minsize == size & pamStage == pam)
+                                minsize == size & pamStage == pam)
 rownames(mod_env_idx_results) <- 1:nrow(mod_env_idx_results)
 
 # adjust factor levels
@@ -382,17 +571,20 @@ mod_env_idx_results$module <- factor(mod_env_idx_results$module,
 plot_cor_mod_pc <- ggplot(mod_env_idx_results, aes(x = pval, y = cor, fill = module, label = paste0(env_idx, "\n", module))) +
   geom_hline(yintercept = 0, color = "gray50") +
   geom_vline(xintercept = 0.5, color = "gray50") +
-  geom_point(data = head(mod_env_idx_results, n = 3), shape = 21, fill = levels(mod_env_idx_results$module)[1:3], show.legend = FALSE) +
-  geom_point(data = tail(mod_env_idx_results, n = nrow(mod_env_idx_results) - 3), color = "grey60", show.legend = FALSE) +
-  geom_label_repel(data = head(mod_env_idx_results, n = 3), max.overlaps = 50,
-                   fill = "white", size = 2, show.legend = FALSE) +
+  geom_point(data = head(mod_env_idx_results, n = 3), shape = 21, size = 3,
+             fill = mod_env_idx_results$module[1:3], show.legend = FALSE) +
+  geom_point(data = tail(mod_env_idx_results, n = nrow(mod_env_idx_results) - 3),
+             size = 3, color = "grey60", alpha = 0.4, show.legend = FALSE) +
+  geom_label_repel(data = head(mod_env_idx_results, n = 3), max.overlaps = 10, nudge_y = c(-0.3, 0.5, 0.3), nudge_x = c(0, 0, 0.2),
+                   fill = "white", size = 3, show.legend = FALSE) +
   coord_cartesian(xlim = c(0, 1), ylim = c(-1, 1)) +
   labs(x = "p-values", y = "Correlation") +
   theme_bw() +
-  theme(panel.grid = element_blank())
+  theme(panel.grid = element_blank(),
+        axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10))
 ggsave(filename = paste0(output_folder, "/fig_6a.png"), plot = plot_cor_mod_pc,
-       device = "png", dpi = 300, units = "in", width = 4, height = 4)
-
+       device = "png", dpi = 350, units = "in", width = 4, height = 5)
 
 ##### b #####
 
@@ -400,7 +592,7 @@ ggsave(filename = paste0(output_folder, "/fig_6a.png"), plot = plot_cor_mod_pc,
 mod_env_idx_cor <- fread(mod_env_idx_cor_file, header = TRUE, data.table = FALSE)
 # select network of interest
 mod_env_idx_cor <- subset(mod_env_idx_cor, meff_model == model & norm_method == norm &
-                          minsize == size & pamStage == pam)
+                            minsize == size & pamStage == pam)
 rownames(mod_env_idx_cor) <- 1:nrow(mod_env_idx_cor)
 # select top 3 most significant modules
 mod_env_idx_cor <- head(mod_env_idx_cor[order(mod_env_idx_cor$pval), ], n = 3)
@@ -452,26 +644,69 @@ for (row in 1:nrow(mod_env_idx_cor)) {
   plot_mod_env_idx_norm <- rbind(MEs, env_idx_net) %>%  
     mutate(type = factor(type, levels = unique(type))) %>% 
     ggplot(aes(x = env, y = value, color = type)) +
-    geom_line(aes(group = type), size = 1.5) +
+    geom_line(aes(group = type), size = 1) +
     scale_color_manual(values = c(gsub("^ME", "",  mod_env_idx_cor[row, "module"], perl = TRUE), "grey70")) + 
-    labs(title = bquote("Module-Environmental index correlation =" ~ bold(.(as.character(mod_env_idx_cor[row, "cor"])))
-                        ~ .(paste0("(pval: ", mod_env_idx_cor[row, "pval"], ")"))),
-         subtitle = bquote("meff model:" ~ bold(.(mod_env_idx_cor[row, "meff_model"])) ~ "/"
-                           ~ "normalization:" ~ bold(.(mod_env_idx_cor[row, "norm_method"])) ~ "/"
-                           ~ "min module size:" ~ bold(.(as.character(mod_env_idx_cor[row, "minsize"]))) ~ "/"
-                           ~ "pamStage:" ~ bold(.(mod_env_idx_cor[row, "pamStage"]))),
-         x = "Environments", y = "Normalized value", color = "Eigenvalues") +
+    scale_y_continuous(breaks = c(0, 0.5, 1)) +
+    labs(x = "Environments", y = "Normalized value", color = "Eigenvalues") +
     theme_bw() +
-    theme(panel.grid.minor = element_blank())
+    theme(panel.grid = element_blank(),
+          axis.title = element_text(size = 12),
+          axis.title.y = element_text(size = 10),
+          axis.text = element_text(size = 10),
+          axis.text.x = element_text(size = 8, angle = 90, hjust = 1, vjust = 0.5),
+          legend.direction = "horizontal",
+          legend.position = "top",
+          legend.text = element_text(size = 8),
+          legend.title = element_text(size = 8),
+          legend.margin = margin(0,0,0,0))
   ggsave(filename = paste0(output_folder, "/fig_6b", row, ".png"), plot = plot_mod_env_idx_norm,
-         device = "png", dpi = 300, units = "in", width = 8, height = 3)
+         device = "png", dpi = 350, units = "in", width = 4, height = 2)
   
 }
 
 
 ##### c #####
 
-# output from 'plot_pc_contributions.R'
+# load pc contributions
+pca_contrib <- fread(pca_contrib_file, header = TRUE, data.table = FALSE)
+
+pca_contrib[, c("idx", "interval")] <- do.call(rbind, lapply(pca_contrib$env_idx, function(idx) {
+  idx <- unlist(strsplit(idx, split = "_"))
+  if (length(idx) > 2) idx <- c(paste0(idx[1:(length(idx) - 1)], collapse = "_"), idx[length(idx)])
+  return(idx)
+}))
+
+pca_contrib <- pca_contrib %>%
+  select(-env_idx) %>% 
+  pivot_longer(-c(idx, interval), names_to = "pc", values_to = "contrib") %>% 
+  mutate(interval = as.numeric(interval))
+
+for (row in 1:nrow(mod_env_idx_cor)) {
+  
+  # get pc
+  PC <- mod_env_idx_cor[row, "env_idx"]
+  
+  # plot summary contributions
+  plot_summary_pc <- pca_contrib %>%
+    filter(pc == PC) %>%
+    arrange(desc(contrib)) %>% 
+    ggplot(aes(x = interval, y = contrib)) +
+    facet_wrap(~ idx, ncol = 6) +
+    geom_smooth(se = TRUE, color = "grey30") +
+    scale_x_continuous(breaks = c(25, 125)) +
+    labs(x = "Time interval", y = "Total contributions (%)") +
+    theme_bw() +
+    theme(panel.grid = element_blank(),
+          axis.title = element_text(size = 12),
+          axis.text.x = element_text(size = 8),
+          axis.text.y = element_text(size = 10),
+          strip.text = element_text(size = 6, margin = margin(1, 0, 1, 0)))
+  plot_summary_pc <- plot_summary_pc +
+  scale_y_continuous(breaks = seq(0, round(max(ggplot_build(plot_summary_pc)$data[[1]]["y"]), digits = 1), length.out = 2))
+  ggsave(filename = paste0(output_folder, "/fig_6c", row, "_", PC, ".png"), plot = plot_summary_pc,
+         device = "png", dpi = 350, units = "in", width = 4, height = 3)
+  
+}
 
 # clean R environment
 rm(list = ls())
@@ -482,114 +717,348 @@ rm(list = ls())
 
 mod_env_idx_cor_file <- "analysis/networks/YLD/module-env-idx_per_network.pca.txt"
 env_idx_file <- "data/env_covariables/pca_env_idx.txt"
+net_alias_file <- "supp_materials/supp_table6.xlsx"
 output_folder <- "figures"
-p_value <- 0.1
-idx <- "PC5"
-list_markers_for_ld <- paste0("analysis/networks/YLD/overlap_markers/markers_correlated_", idx, ".txt")
+p_value <- 0.11
+indices <- c("PC4", "PC5", "PC7", "PC9")
 
-# load module-env index relationship
-mod_env_idx_cor <- fread(mod_env_idx_cor_file, header = TRUE, data.table = FALSE)
-# select only significant associations
-mod_env_idx_cor <- subset(mod_env_idx_cor, pval < p_value)
-rownames(mod_env_idx_cor) <- 1:nrow(mod_env_idx_cor)
-# round numbers
-mod_env_idx_cor$cor <- sapply(mod_env_idx_cor$cor, function(x) round(x, digits = 2))
-mod_env_idx_cor$pval <- sapply(mod_env_idx_cor$pval, function(x) round(x, digits = 2))
-# correct module name
-mod_env_idx_cor$module <- gsub("^ME", "", mod_env_idx_cor$module, perl = TRUE)
+# load file with network aliases
+net_alias <- read_excel(net_alias_file)
+net_alias$Model <- factor(net_alias$Model, levels = c("GWAS", "RR-BLUP"), labels = c("gwas", "rrblup"))
+net_alias$Normalization <- factor(net_alias$Normalization, levels = c("Minmax", "Z-score"), labels = c("minmax", "zscore"))
 
-# split data to loop through groups
-mod_env_idx_cor_split <- split(mod_env_idx_cor, mod_env_idx_cor[, "env_idx"])
-
-# get only modules associated with that env_idx
-sig_env_idx <- mod_env_idx_cor_split[[idx]]
-
-# create empty dataframe to store markers from different networks
-markers_mod_idx <- data.frame(stringsAsFactors = FALSE)
-
-for (row in 1:nrow(sig_env_idx)) {
+for (idx in indices) {
   
-  # get details about network
-  model <- sig_env_idx[row, "meff_model"]
-  norm <- sig_env_idx[row, "norm_method"]
-  size <- sig_env_idx[row, "minsize"]
-  pam <- sig_env_idx[row, "pamStage"]
-  module <- gsub("^ME", "", sig_env_idx[row, "module"], perl = TRUE)
+  list_markers_for_ld <- paste0("analysis/networks/YLD/overlap_markers/markers_correlated_", idx, ".txt")
   
-  # get markers in module for a specific network
-  network_mod_markers <- paste0("analysis/networks/YLD/meff_", model, "/norm_", norm,
-                                "/min_mod_size_", size, "/pamStage_", pam,
-                                "/kDiff_per_module.txt")
-  network_mod_markers <- fread(network_mod_markers, header = TRUE, data.table = FALSE)
-  network_mod_markers <- network_mod_markers[network_mod_markers$source == "TOM", c("module", "marker")]
-  network_mod_markers <- network_mod_markers[network_mod_markers$module == module, ]
+  # load module-env index relationship
+  mod_env_idx_cor <- fread(mod_env_idx_cor_file, header = TRUE, data.table = FALSE)
+  # select only significant associations
+  mod_env_idx_cor <- subset(mod_env_idx_cor, pval <= p_value)
+  rownames(mod_env_idx_cor) <- 1:nrow(mod_env_idx_cor)
+  # round numbers
+  mod_env_idx_cor$cor <- sapply(mod_env_idx_cor$cor, function(x) round(x, digits = 2))
+  mod_env_idx_cor$pval <- sapply(mod_env_idx_cor$pval, function(x) round(x, digits = 2))
+  # correct module name
+  mod_env_idx_cor$module <- gsub("^ME", "", mod_env_idx_cor$module, perl = TRUE)
   
-  # add network settings
-  network_mod_markers <- data.frame(network = paste(model, norm, size, pam, sep = "_"),
-                                    network_mod_markers, stringsAsFactors = FALSE)
-  network_mod_markers <- tidyr::unite(network_mod_markers, network:module, col = "network_module", sep = "-")
-  # get accuracy results
-  markers_mod_idx <- rbind(markers_mod_idx, network_mod_markers)
+  # split data to loop through groups
+  mod_env_idx_cor_split <- split(mod_env_idx_cor, mod_env_idx_cor[, "env_idx"])
   
-}
-rm(network_mod_markers)
+  # get only modules associated with that env_idx
+  sig_env_idx <- mod_env_idx_cor_split[[idx]]
+  
+  # create empty dataframe to store markers from different networks
+  markers_mod_idx <- data.frame(stringsAsFactors = FALSE)
+  
+  for (row in 1:nrow(sig_env_idx)) {
+    
+    # get details about network
+    model <- sig_env_idx[row, "meff_model"]
+    norm <- sig_env_idx[row, "norm_method"]
+    size <- sig_env_idx[row, "minsize"]
+    pam <- sig_env_idx[row, "pamStage"]
+    module <- gsub("^ME", "", sig_env_idx[row, "module"], perl = TRUE)
+    
+    # get markers in module for a specific network
+    network_mod_markers <- paste0("analysis/networks/YLD/meff_", model, "/norm_", norm,
+                                  "/min_mod_size_", size, "/pamStage_", pam,
+                                  "/kDiff_per_module.txt")
+    network_mod_markers <- fread(network_mod_markers, header = TRUE, data.table = FALSE)
+    network_mod_markers <- network_mod_markers[network_mod_markers$source == "TOM", c("module", "marker")]
+    network_mod_markers <- network_mod_markers[network_mod_markers$module == module, ]
+    
+    # add network settings
+    net_name <- subset(net_alias, Model == model & Normalization == norm & `Minimum module size` == size & pamStage == pam)[, 1]
+    network_mod_markers <- data.frame(network = net_name,
+                                      network_mod_markers, stringsAsFactors = FALSE)
+    network_mod_markers <- tidyr::unite(network_mod_markers, Network:module, col = "network_module", sep = "-")
+    # get accuracy results
+    markers_mod_idx <- rbind(markers_mod_idx, network_mod_markers)
+    
+  }
+  rm(network_mod_markers)
+  
+  # transform df into list
+  list_markers_mod_idx <- list()
+  for (net in unique(markers_mod_idx$network_module)) {
+    module_name <- unique(markers_mod_idx[markers_mod_idx$network == net, "network_module"])
+    list_markers_mod_idx[[module_name]] <- markers_mod_idx[markers_mod_idx$network == net, "marker"]
+  }
+  names(list_markers_mod_idx) <- sapply(names(list_markers_mod_idx), function(x) gsub("-", "_", x))
+  # reorder list
+  list_markers_mod_idx <- list_markers_mod_idx[order(names(list_markers_mod_idx))]
 
-# transform df into list
-list_markers_mod_idx <- list()
-for (net in unique(markers_mod_idx$network_module)) {
-  module_name <- unique(markers_mod_idx[markers_mod_idx$network == net, "network_module"])
-  list_markers_mod_idx[[module_name]] <- markers_mod_idx[markers_mod_idx$network == net, "marker"]
-}
-names(list_markers_mod_idx) <- sapply(names(list_markers_mod_idx), function(x) gsub("-", "_", x))
-
-# read LD file
-ld_file <- fread(gsub(".txt", ".ld.gz", list_markers_for_ld), header = TRUE, data.table = FALSE)
-
-# substitute the name of markers in LD to each other with a representative marker
-for (mod in names(list_markers_mod_idx)) {
+  # read LD file
+  ld_file <- fread(gsub(".txt", ".ld.gz", list_markers_for_ld), header = TRUE, data.table = FALSE)
   
-  for (marker in 1:length(list_markers_mod_idx[[mod]])) {
-    # get marker name
-    marker_name <- list_markers_mod_idx[[mod]][marker]
-    # check which markers are in LD with it
-    marker_ld <- ld_file[ld_file$SNP_A == marker_name | ld_file$SNP_B == marker_name, c("SNP_A", "SNP_B")]
-    # if there's at least one marker in LD
-    if (nrow(marker_ld) > 0) {
-      # get the name of the first marker in the group
-      # (it will always be the same because file is ordered by position)
-      marker_ld <- unique(unlist(marker_ld))[1]
-      # change the marker name to the representative marker
-      list_markers_mod_idx[[mod]][marker] <- marker_ld
+  # substitute the name of markers in LD to each other with a representative marker
+  for (mod in names(list_markers_mod_idx)) {
+    
+    for (marker in 1:length(list_markers_mod_idx[[mod]])) {
+      # get marker name
+      marker_name <- list_markers_mod_idx[[mod]][marker]
+      # check which markers are in LD with it
+      marker_ld <- ld_file[ld_file$SNP_A == marker_name | ld_file$SNP_B == marker_name, c("SNP_A", "SNP_B")]
+      # if there's at least one marker in LD
+      if (nrow(marker_ld) > 0) {
+        # get the name of the first marker in the group
+        # (it will always be the same because file is ordered by position)
+        marker_ld <- unique(unlist(marker_ld))[1]
+        # change the marker name to the representative marker
+        list_markers_mod_idx[[mod]][marker] <- marker_ld
+      }
     }
+    
+    # keep redundant marker names
+    list_markers_mod_idx[[mod]] <- unique(list_markers_mod_idx[[mod]])
+    
   }
   
-  # keep redundant marker names
-  list_markers_mod_idx[[mod]] <- unique(list_markers_mod_idx[[mod]])
+  # rename networks for plotting
+  names(list_markers_mod_idx) <- sapply(names(list_markers_mod_idx), function(x) {
+    paste0("network ", gsub("_", "\n(", x), ")")
+  })
+  # # uncomment if want to use cor and pval values
+  # sig_env_idx$name <- apply(sig_env_idx, MARGIN = 1, function(sig_cor, net_alias) {
+  #   name <- subset(net_alias, Model == sig_cor["meff_model"]
+  #                  & Normalization == sig_cor["norm_method"]
+  #                  & `Minimum module size` == sig_cor["minsize"]
+  #                  & pamStage == sig_cor["pamStage"])[, 1]
+  #   name <- paste0(name, "_", sig_cor["module"])
+  #   return(name)
+  # }, net_alias = net_alias)
+  # sig_env_idx <- sig_env_idx[match(names(list_markers_mod_idx), sig_env_idx$name), ]
+  # sig_env_idx$alias <- apply(sig_env_idx, MARGIN = 1, function(x) {
+  #   paste0("network ", gsub("_", " - ", x["name"]), "\n(cor: ", x["cor"], ", pval: ", x["pval"], ")")
+  # })
+  # names(list_markers_mod_idx) <- sig_env_idx[, "alias"]
+  
+  # plot intersections of markers
+  upset_plot <- upset(fromList(list_markers_mod_idx), sets = rev(names(list_markers_mod_idx)), keep.order = TRUE,
+                      mainbar.y.label = paste0("Shared\nmarkers\nassociated\nwith ", idx), sets.x.label = "Markers per module",
+                      order.by = "freq", mb.ratio = c(0.4, 0.6), nsets = 100, text.scale = c(0.8, 1, 1, 0.8, 1, 1))
+  # text.scale = c(intersection size title, intersection size tick labels, set size title, set size tick labels, set names, numbers above bars)
+  png(paste0(output_folder, "/fig_7", letters[which(idx == indices)], ".png"), units = "in", res = 350, width = 4, height = 2.5)
+  print(upset_plot)
+  dev.off()
   
 }
 
-# rename marker sets
-sig_env_idx$name <- pull(unite(sig_env_idx[, c("meff_model", "norm_method", "minsize", "pamStage", "module")], col = "name", sep = "_"))
-sig_env_idx <- sig_env_idx[match(names(list_markers_mod_idx), sig_env_idx$name), ]
-sig_env_idx$alias <- NA
-for (row in 1:nrow(sig_env_idx)) {
-  sig_env_idx[row, "alias"] <- paste0("network ", row, "\n(cor: ", sig_env_idx[row, "cor"],
-                                      ", p-value: ", sig_env_idx[row, "pval"], ")")
-}
-names(list_markers_mod_idx) <- sig_env_idx[, "alias"]
+# clean R environment
+rm(list = ls())
 
-# plot intersections of markers
-upset_plot <- upset(fromList(list_markers_mod_idx), sets = rev(sig_env_idx[, "alias"]), keep.order = TRUE,
-                    order.by = "freq", mb.ratio = c(0.55, 0.45), nsets = 100)
-png(paste0(output_folder, "/fig_7.png"), units = "in", res = 300, width = 5, height = 3)
-print(upset_plot)
-dev.off()
+
+#### supp figure 1 ----
+
+# output from 'scripts/get_BLUEs_from_empirical-data.R'
+
+
+
+#### supp figure 2 ----
+
+# output from 'scripts/estimate_marker_effects.R'
+
+
+
+#### supp figure 3 ----
+
+# output from 'scripts/estimate_marker_effects.R'
+
+
+
+#### supp figure 4 ----
+
+# output from 'scripts/pca_env_idx.R'
+
+
+#### supp figure 5 ---- 
+
+results_folder <- "analysis/networks/YLD"
+output_folder <- "figures"
+
+# create empty df to store results
+sft_all <- data.frame(stringsAsFactors = FALSE)
+
+for (model in c("rrblup", "gwas")) {
+  for (norm in c("minmax", "zscore")) {
+    
+    if (norm == "minmax") {
+      for (cv in c(0.05, 0.075, 0.1, 0.125, 0.15, 0.175, 0.2, 0.25)) {
+        
+        # load file
+        sft_file <- paste0(results_folder, "/meff_", model, "/norm_", norm,
+                           "/cv_thresholds/scale-free_topology_fit_index.cv-", cv, ".txt")
+        sft_results <- fread(sft_file, header = TRUE, data.table = FALSE)
+        # get results
+        sft_all <- rbind(sft_all, data.frame(model = model, norm = norm,  cv = cv, sft_results))
+        
+      }
+    }
+    
+    if (any(norm == "zscore" | norm == "none")) {
+      for (cv in c(0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 1)) {
+        
+        # load file
+        sft_file <- paste0(results_folder, "/meff_", model, "/norm_", norm,
+                           "/cv_thresholds/scale-free_topology_fit_index.cv-", cv, ".txt")
+        sft_results <- fread(sft_file, header = TRUE, data.table = FALSE)
+        # get results
+        sft_all <- rbind(sft_all, data.frame(model = model, norm = norm,  cv = cv, sft_results))
+        
+      }
+    }
+    
+  }
+}
+rm(sft_results)
+
+# add signed R2 values
+sft_all$signed_R2 <- -sign(sft_all$slope) * sft_all$SFT.R.sq
+
+##### a -----
+
+mean_k_plot <- sft_all %>%
+  mutate(norm = factor(norm, levels = c("minmax", "zscore"), labels = c("Minmax", "Z-score")),
+         model = factor(model, levels = c("gwas", "rrblup"), labels = c("GWAS", "rrBLUP"))) %>% 
+  ggplot(aes(x = Power, y = mean.k., group = as.factor(cv), color = as.factor(cv))) +
+  facet_grid(model ~ norm) +
+  geom_line() +
+  geom_point() +
+  scale_color_viridis_d(end = 0.9, option = "B", direction = -1) +
+  scale_x_continuous(breaks = seq(0, 30, 5)) +
+  labs(x = "Power", y = "Mean connectivity", color = "CV cut-off") +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10))
+ggsave(filename = paste0(output_folder, "/supp_fig_4a.png"), plot = mean_k_plot,
+       device = "png", dpi = 350, units = "in", width = 10, height = 6)
+
+##### b -----
+
+median_k_plot <- sft_all %>%
+  mutate(norm = factor(norm, levels = c("minmax", "zscore"), labels = c("Minmax", "Z-score")),
+         model = factor(model, levels = c("gwas", "rrblup"), labels = c("GWAS", "rrBLUP"))) %>% 
+  ggplot(aes(x = Power, y = median.k., group = as.factor(cv), color = as.factor(cv))) +
+  facet_grid(model ~ norm) +
+  geom_line() +
+  geom_point() +
+  scale_color_viridis_d(end = 0.9, option = "B", direction = -1) +
+  scale_x_continuous(breaks = seq(0, 30, 5)) +
+  labs(x = "Power", y = "Median connectivity", color = "CV cut-off") +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10))
+ggsave(filename = paste0(output_folder, "/supp_fig_4b.png"), plot = median_k_plot,
+       device = "png", dpi = 350, units = "in", width = 10, height = 6)
 
 # clean R environment
 rm(list = ls())
 
 
 
-#### supplemental figure 1 ----
 
-# output from 'scripts/pick_soft_threshold.R'
+#### supp figure 6 (MSI) ----
+# note: ran this on MSI
+
+input_folder <- "analysis/networks/YLD"
+output_folder <- "figures"
+i <- 1
+
+for (model in c("gwas", "rrblup")) {
+  for (norm in c("minmax", "zscore")) {
+    for (size in c(25, 50, 100)) {
+      for (pam in c("off", "on")) {
+        
+        # get filename
+        meff_mod <- paste0(input_folder, "/meff_", model, "/norm_", norm,
+                           "/min_mod_size_", size, "/pamStage_", pam,
+                           "/define_network_modules.RData")
+        
+        # exclude networks with gwas and 100 min mod size
+        if (!all(model == "gwas" & size == 100)) {
+          
+          # load data
+          load(meff_mod)
+          # plot heatmap
+          pdf(paste0(output_folder, "/supp-fig_5-net_", i, ".pdf"), width = 8, height = 10)
+          pheatmap(mat = t(MEs), angle_col = 0, main = paste0("Network ", i))
+          dev.off()
+          # add count
+          i <- i + 1
+          
+        }
+        
+      }
+    }
+  }
+}
+
+# clean R environment
+rm(list = ls())
+
+
+
+#### supp figure 7 (MSI) ----
+# note: ran this on MSI
+
+mod_env_idx_cor_file <- "analysis/networks/YLD/module-env-idx_per_network.pca.txt"
+env_idx_file <- "data/env_covariables/pca_env_idx.txt"
+output_folder <- "figures"
+i <- 1
+
+for (model in c("gwas", "rrblup")) {
+  for (norm in c("minmax", "zscore")) {
+    for (size in c(25, 50, 100)) {
+      for (pam in c("off", "on")) {
+        
+        # get filename
+        meff_mod_Rdata <- paste0("analysis/networks/YLD/meff_", model, "/norm_", norm, "/min_mod_size_", size,
+                                 "/pamStage_", pam, "/define_network_modules.RData")
+        
+        # exclude networks with gwas and 100 min mod size
+        if (!all(model == "gwas" & size == 100)) {
+          
+          # load data
+          mod_env_idx_results <- fread(mod_env_idx_cor_file, header = TRUE, data.table = FALSE)
+
+          # select network of interest
+          mod_env_idx_results <- subset(mod_env_idx_results, meff_model == model & norm_method == norm &
+                                          minsize == size & pamStage == pam)
+          rownames(mod_env_idx_results) <- 1:nrow(mod_env_idx_results)
+
+          # adjust factor levels
+          mod_env_idx_results$module <- gsub("^ME", "", mod_env_idx_results$module, perl = TRUE)
+          mod_env_idx_results$module <- factor(mod_env_idx_results$module,
+                                               levels = unique(mod_env_idx_results$module))
+
+          # plot association
+          plot_cor_mod_pc <- ggplot(mod_env_idx_results, aes(x = pval, y = cor, fill = module, label = paste0(env_idx, "\n", module))) +
+            geom_hline(yintercept = 0, color = "gray50") +
+            geom_vline(xintercept = 0.5, color = "gray50") +
+            geom_point(data = head(mod_env_idx_results, n = 3), shape = 21, fill = levels(mod_env_idx_results$module)[1:3], show.legend = FALSE) +
+            geom_point(data = tail(mod_env_idx_results, n = nrow(mod_env_idx_results) - 3), color = "grey60", show.legend = FALSE) +
+            geom_label_repel(data = head(mod_env_idx_results, n = 3), max.overlaps = 50,
+                             fill = "white", size = 2, show.legend = FALSE) +
+            coord_cartesian(xlim = c(0, 1), ylim = c(-1, 1)) +
+            labs(title = paste0("Network ", i), x = "p-values", y = "Correlation") +
+            theme_bw() +
+            theme(panel.grid = element_blank())
+          ggsave(filename = paste0(output_folder, "/supp-fig_7-net_", i, ".pdf"), plot = plot_cor_mod_pc,
+                 device = "pdf", units = "in", width = 4, height = 4)
+          
+          # add count
+          i <- i + 1
+          
+        }
+        
+      }
+    }
+  }
+}
+
+# clean R environment
+rm(list = ls())
+
