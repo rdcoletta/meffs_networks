@@ -1,21 +1,61 @@
 # Marker effects networks
 by Rafael Della Coletta and Candice Hirsch
 
-> The objective of this project was to determine whether or not we could create networks of marker effects from a maize population across multiple environments, and identify which markers (or modules of markers) were associated with environmental adaptability.
+> The objective of this project was to determine whether or not we could create networks of marker effects from a maize population across multiple environments, and identify which markers (or modules of markers) were associated with environmental adaptability. For more details about this analysis, please read the manuscript: **ADD DOI HERE!**
+
+<!-- TOC START min:1 max:3 link:true asterisk:false update:true -->
+- [Marker effects networks](#marker-effects-networks)
+  - [Important notes!](#important-notes)
+  - [Genotypic data](#genotypic-data)
+    - [Hapmap format](#hapmap-format)
+    - [Data QC](#data-qc)
+    - [Convert SNP coordinates from B73v2 to B73v4](#convert-snp-coordinates-from-b73v2-to-b73v4)
+    - [Correct miscalls with sliding window approach](#correct-miscalls-with-sliding-window-approach)
+    - [Generate hybrid genotypes](#generate-hybrid-genotypes)
+    - [Prune markers by LD](#prune-markers-by-ld)
+  - [Phenotypic data](#phenotypic-data)
+  - [Estimate marker effects](#estimate-marker-effects)
+  - [Build networks](#build-networks)
+    - [Step 1. Choose a coefficient of variation filter](#step-1-choose-a-coefficient-of-variation-filter)
+    - [Step 2. Pick a soft threshold](#step-2-pick-a-soft-threshold)
+    - [Step 3. Build the network](#step-3-build-the-network)
+    - [Step 4. Define network modules](#step-4-define-network-modules)
+    - [Step 5. QC network modules](#step-5-qc-network-modules)
+    - [Step 6. Calculate LD for markers within each module](#step-6-calculate-ld-for-markers-within-each-module)
+  - [Relate modules to environmental covariables](#relate-modules-to-environmental-covariables)
+<!-- TOC END -->
 
 
 
+## Important notes!
 
-## Project folder
+All data necessary to replicate this analysis are available in the Data Repository for the University of Minnesota (DRUM): **ADD DOI HERE!**. When submitting the files for publication, I named them Files S1-S6 for easier reference within the manuscript. However, please rename them to their original filenames before running any of the scripts according to this table:
 
-All data, scripts, analyses, notes and other things related to this project is located on my MSI account:
+| File | Name                                                                 |
+| ---- | -------------------------------------------------------------------- |
+| S1   | NIFA_CompleteDataset.csv                                             |
+| S2   | 1stStage_BLUEs.YLD-per-env.txt                                       |
+| S3   | usda_22kSNPs_parents.hmp.txt                                         |
+| S4   | usda_22kSNPs_rils.hmp.txt                                            |
+| S5   | usda_hybrids_SNP-chip.maf-filter.pruned-100kb.geno-miss-0.25.hmp.txt |
+| S6   | env_covariables_means_per_intervals.txt                              |
 
-```bash
-cd /home/hirschc1/della028/projects/marker-effects_networks
-mkdir -p {analysis,data,scripts,tests}
-mkdir -p analysis/MSI_dump
-```
+All scripts necessary for data analysis are available at the `scripts` folder in this GitHub repository, and I recommend that you create a folder called `data` to keep the files above and another called `analysis` to keep any other files generated throughout this analysis.
 
+If you want to skip the genotypic and phenotypic data quality control steps, and start building the marker effect networks, then jump to the [Estimate marker effects](#estimate-marker-effects) section. You will need files S2, S5 and S6 (properly renamed according to the table above).
+
+All the analysis, unless indicated otherwise, were run using the Minnesota Supercomputing Institute (MSI) clusters, which uses the SLURM scheduler. You may need to adapt some scripts if you use a different scheduler.
+
+Finally, here is a list of software necessary to run the analysis and their respective versions:
+
+| Software | Version |
+| -------- | ------- |
+| R        | 3.6.0   |
+| Python   | 3.6.6   |
+| GNU bash | 4.2.46  |
+| Tassel   | 5.2.56  |
+| Plink    | 1.9     |
+| Bowtie   | 1.1.2   |
 
 
 
@@ -27,6 +67,8 @@ We will estimate marker effects of SNPs from the hybrid maize lines, but we only
 ### Hapmap format
 
 Before doing any analysis, we need to transform the genotypic data that comes from the SNP chip into the [HapMap format](https://bitbucket.org/tasseladmin/tassel-5-source/wiki/UserManual/Load/Load) for more info about the format). I used the `scripts/usda_geno2hmp.R` script to transform all parental and RIL data to hapmap format:
+
+> For the manuscript, I provided the hapmap version of the raw genotypic datasets, so you can skip the first two steps (i.e., running `scripts/usda_geno2hmp.R` and `scripts/remove_extra_geno-data.R`) and start at the Tassel filtering step.
 
 ```bash
 module load R/3.6.0
@@ -353,7 +395,7 @@ done
 
 ### Generate hybrid genotypes
 
-Use information available on `data/NIFA_CompleteDataset.csv` (sent by Sharon and transferred to MSI via Filezilla) to get pedigree of hybrids, and then create hybrid genotypes based on genotypes of parental (RIL) data generated above.
+Use information available on `data/NIFA_CompleteDataset.csv` to get pedigree of hybrids, and then create hybrid genotypes based on genotypes of parental (RIL) data generated above.
 
 ```bash
 # create hybrid genotypes
@@ -450,6 +492,8 @@ Number of markers remaining after pruning the genotypic dataset with different w
 | 0.5                 | 1000 kb     | 6,978             |
 
 We decided to use `data/usda_hybrids_SNP-chip.maf-filter.pruned-100kb.geno-miss-0.25.hmp.txt` to balance missing data, window size and number of markers to build networks.
+
+> This is the File S5 I mention in the manuscript.
 
 
 
@@ -1002,7 +1046,9 @@ sbatch --export=LDFILE=${LDFILE},OUTFOLDER=${OUTFOLDER} scripts/plot_ld_summary_
 
 ## Relate modules to environmental covariables
 
-Since we are interested in understanding phenotypic plasticity across environments, we also want to see if the network modules correlate with environmental covariables. To do that, we first extract these covariables running `scripts/get_env_types.R`. I created `data/env_sites_coord.csv` with environmental coordinates and planting/harverst dates.
+Since we are interested in understanding phenotypic plasticity across environments, we also want to see if the network modules correlate with environmental covariables. To do that, we first extract these covariables running `scripts/get_env_types.R`. I created `data/env_sites_coord.csv` with environmental coordinates and planting/harvest dates.
+
+> The information for file `data/env_sites_coord.csv` is available as Table S2 in the manuscript. Running `scripts/get_env_types.R` will create the `data/env_covariables/env_covariables_means_per_intervals.txt` which is the File S6, so you can skip this step if you want.
 
 ```bash
 module load R/3.6.0
