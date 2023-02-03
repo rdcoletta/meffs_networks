@@ -35,7 +35,7 @@ output_folder <- "figures"
 gebvs_all <- data.frame(stringsAsFactors = FALSE)
 
 for (model in c("rrblup", "gwas")) {
-  
+
   # get filename
   file_gebvs <- paste0(input_folder, "/GEBVs.", model, ".txt")
   # load file
@@ -44,7 +44,7 @@ for (model in c("rrblup", "gwas")) {
   gebvs <- pivot_longer(gebvs, -genotype, names_to = "env", values_to = "gebv")
   # append results to main df
   gebvs_all <- rbind(gebvs_all, data.frame(gebvs, model = model))
-  
+
 }
 
 # read file with genotype means for each environment
@@ -92,10 +92,10 @@ dev.off()
 
 # load data
 env_idx <- fread(env_idx_file, header = TRUE, data.table = FALSE)
-env_idx <- env_idx %>% 
-  unite(covariable:intervals, col = "covariable", sep = "_") %>% 
-  pivot_wider(names_from = "covariable", values_from = "value") %>% 
-  column_to_rownames(var = "env") %>% 
+env_idx <- env_idx %>%
+  unite(covariable:intervals, col = "covariable", sep = "_") %>%
+  pivot_wider(names_from = "covariable", values_from = "value") %>%
+  column_to_rownames(var = "env") %>%
   as.matrix()
 
 # perform PCA
@@ -144,33 +144,33 @@ sft_all <- data.frame(stringsAsFactors = FALSE)
 
 for (model in c("rrblup", "gwas")) {
   for (norm in c("minmax", "zscore")) {
-    
+
     if (norm == "minmax") {
       for (cv in c(0.05, 0.075, 0.1, 0.125, 0.15, 0.175, 0.2, 0.25)) {
-        
+
         # load file
         sft_file <- paste0(results_folder, "/meff_", model, "/norm_", norm,
                            "/cv_thresholds/scale-free_topology_fit_index.cv-", cv, ".txt")
         sft_results <- fread(sft_file, header = TRUE, data.table = FALSE)
         # get results
         sft_all <- rbind(sft_all, data.frame(model = model, norm = norm,  cv = cv, sft_results))
-        
+
       }
     }
-    
+
     if (any(norm == "zscore" | norm == "none")) {
       for (cv in c(0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 1)) {
-        
+
         # load file
         sft_file <- paste0(results_folder, "/meff_", model, "/norm_", norm,
                            "/cv_thresholds/scale-free_topology_fit_index.cv-", cv, ".txt")
         sft_results <- fread(sft_file, header = TRUE, data.table = FALSE)
         # get results
         sft_all <- rbind(sft_all, data.frame(model = model, norm = norm,  cv = cv, sft_results))
-        
+
       }
     }
-    
+
   }
 }
 rm(sft_results)
@@ -181,7 +181,7 @@ sft_all$signed_R2 <- -sign(sft_all$slope) * sft_all$SFT.R.sq
 # plot power distribution
 sft_plot <- sft_all %>%
   mutate(norm = factor(norm, levels = c("minmax", "zscore"), labels = c("Minmax", "Z-score")),
-         model = factor(model, levels = c("gwas", "rrblup"), labels = c("GWAS", "RR-BLUP"))) %>% 
+         model = factor(model, levels = c("gwas", "rrblup"), labels = c("GWAS", "RR-BLUP"))) %>%
   ggplot(aes(x = Power, y = signed_R2, group = as.factor(cv), color = as.factor(cv))) +
   facet_grid(norm ~ model) +
   geom_line() +
@@ -204,11 +204,11 @@ ggsave(filename = paste0(output_folder, "/fig_2a.png"), plot = sft_plot,
 
 ##### b #####
 
-plot_total_markers <- sft_all %>% 
+plot_total_markers <- sft_all %>%
   mutate(norm = factor(norm, levels = c("minmax", "zscore"), labels = c("Minmax", "Z-score")),
-         model = factor(model, levels = c("gwas", "rrblup"), labels = c("GWAS", "RR-BLUP"))) %>% 
-  group_by(model, norm, cv) %>% 
-  summarize(total.markers = mean(total.markers, na.rm = TRUE)) %>% 
+         model = factor(model, levels = c("gwas", "rrblup"), labels = c("GWAS", "RR-BLUP"))) %>%
+  group_by(model, norm, cv) %>%
+  summarize(total.markers = mean(total.markers, na.rm = TRUE)) %>%
   ggplot(aes(x = as.factor(cv), y = total.markers)) +
   facet_grid2(norm ~ model, scales = "free_x", independent = "x") +
   geom_col() +
@@ -231,24 +231,24 @@ net_alias$order <- paste(net_alias$Model, net_alias$Normalization, net_alias$`Mi
 # load qc file
 qc_results <- fread(qc_networks_file, header = TRUE, data.table = FALSE)
 # adjust data to match aliases order
-qc_results <- qc_results %>% 
+qc_results <- qc_results %>%
   filter(source == "adjacency") %>%
   mutate(norm_method = factor(norm_method, levels = c("minmax", "zscore"), labels = c("Minmax", "Z-score")),
-         meff_model = factor(meff_model, levels = c("gwas", "rrblup"), labels = c("GWAS", "RR-BLUP"))) %>% 
-  unite(col = "order", meff_model:pamStage, remove = FALSE) %>% 
-  mutate(order = match(order, net_alias$order)) %>% 
+         meff_model = factor(meff_model, levels = c("gwas", "rrblup"), labels = c("GWAS", "RR-BLUP"))) %>%
+  unite(col = "order", meff_model:pamStage, remove = FALSE) %>%
+  mutate(order = match(order, net_alias$order)) %>%
   arrange(order)
 
 # plot markers per module
-plot_markers_per_mod <- qc_results %>% 
+plot_markers_per_mod <- qc_results %>%
   group_by(order, meff_model, norm_method, minsize, pamStage, module) %>%
   summarize(n_markers = n()) %>%
   ungroup() %>%
-  group_by(order, meff_model, norm_method, minsize, pamStage) %>% 
+  group_by(order, meff_model, norm_method, minsize, pamStage) %>%
   mutate(n_modules = n()) %>%
   ungroup() %>%
   mutate(n_markers_no_grey = NA,
-         n_markers_no_grey = case_when(module != "grey" ~ n_markers)) %>% 
+         n_markers_no_grey = case_when(module != "grey" ~ n_markers)) %>%
   pivot_longer(c(n_markers, n_markers_no_grey, n_modules), names_to = "metric", values_to = "values") %>%
   mutate(order = factor(order),
          metric = factor(metric, levels = c("n_modules", "n_markers", "n_markers_no_grey"),
@@ -289,12 +289,12 @@ net_alias$order <- paste(net_alias$Model, net_alias$Normalization, net_alias$`Mi
 # load qc file
 qc_results <- fread(qc_networks_file, header = TRUE, data.table = FALSE)
 # adjust data to match aliases order
-qc_results <- qc_results %>% 
+qc_results <- qc_results %>%
   filter(source == "adjacency") %>%
   mutate(norm_method = factor(norm_method, levels = c("minmax", "zscore"), labels = c("Minmax", "Z-score")),
-         meff_model = factor(meff_model, levels = c("gwas", "rrblup"), labels = c("GWAS", "RR-BLUP"))) %>% 
-  unite(col = "order", meff_model:pamStage, remove = FALSE) %>% 
-  mutate(order = match(order, net_alias$order)) %>% 
+         meff_model = factor(meff_model, levels = c("gwas", "rrblup"), labels = c("GWAS", "RR-BLUP"))) %>%
+  unite(col = "order", meff_model:pamStage, remove = FALSE) %>%
+  mutate(order = match(order, net_alias$order)) %>%
   arrange(order)
 
 ##### a #####
@@ -306,7 +306,7 @@ plot_k_metrics <- qc_results %>%
   ungroup() %>%
   pivot_longer(c(kDiff, clusterCoeff, kRatio), names_to = "metric", values_to = "values") %>%
   mutate(module = factor(module),
-         order = factor(order)) %>% 
+         order = factor(order)) %>%
   ggplot() +
   facet_wrap(~ metric, nrow = 3, scales = "free_y") +
   geom_boxplot(aes(x = order, y = values), fill = "grey80", outlier.size = 0.25, show.legend = FALSE) +
@@ -331,7 +331,7 @@ plot_pos_kDiff <- qc_results %>%
             mean_kDiff = mean(kDiff),
             se_kDiff = mean_kDiff / sqrt(n_markers)) %>%
   ungroup() %>%
-  group_by(order, meff_model, norm_method, minsize, pamStage) %>% 
+  group_by(order, meff_model, norm_method, minsize, pamStage) %>%
   summarize(n_modules = n(),
             positive_mean_kDiff = round(sum(mean_kDiff > 0) / n_modules, digits = 2)) %>%
   ungroup() %>%
@@ -425,13 +425,13 @@ mod_edges <- data.frame(lapply(mod_TOM$edgeData, as.character), stringsAsFactors
 mod_edges$weight <- as.numeric(mod_edges$weight)
 # get ld between two markers in network
 mod_edges$R2 <- apply(mod_edges[, c("fromNode", "toNode")], MARGIN = 1, function(marker_pair, ld_module) {
-  
+
   r2_value <- ld_module[(ld_module$SNP_A == marker_pair["fromNode"] & ld_module$SNP_B == marker_pair["toNode"]) |
                           (ld_module$SNP_A == marker_pair["toNode"] & ld_module$SNP_B == marker_pair["fromNode"]), "R2"]
   if (length(r2_value) == 0) r2_value <- NA
-  
+
   return(r2_value)
-  
+
 }, ld_module = ld_module)
 # add categorical variable relating two markers --> are they in LD or not?
 mod_edges$LD <- ifelse(mod_edges$R2 > 0.9, yes = TRUE, no = FALSE)
@@ -481,11 +481,11 @@ ld_results_file <- "analysis/networks/YLD/summary_ld_per_network.txt.gz"
 # load file
 ld_results <- fread(ld_results_file, header = TRUE, data.table = FALSE)
 # adjust files to match network aliases
-ld_results <- ld_results %>% 
+ld_results <- ld_results %>%
   mutate(norm_method = factor(norm_method, levels = c("minmax", "zscore"), labels = c("Minmax", "Z-score")),
-         meff_model = factor(meff_model, levels = c("gwas", "rrblup"), labels = c("GWAS", "RR-BLUP"))) %>% 
-  unite(col = "order", meff_model:pamStage, remove = FALSE) %>% 
-  mutate(order = match(order, net_alias$order)) %>% 
+         meff_model = factor(meff_model, levels = c("gwas", "rrblup"), labels = c("GWAS", "RR-BLUP"))) %>%
+  unite(col = "order", meff_model:pamStage, remove = FALSE) %>%
+  mutate(order = match(order, net_alias$order)) %>%
   arrange(order)
 
 # create plot
@@ -500,7 +500,7 @@ ld_dist <- ld_results %>%
         panel.grid = element_blank(),
         axis.title = element_text(size = 12),
         axis.text = element_text(size = 10)) +
-  binned_scale(aesthetics = "fill", scale_name = "custom", 
+  binned_scale(aesthetics = "fill", scale_name = "custom",
                palette = ggplot2:::binned_pal(scales::manual_pal(values = c(rep("#80808080", 8), rep("gold2", 2)))),
                guide = "bins",
                breaks = seq(0, 1, 0.1), limits = c(0, 1), show.limits = TRUE)
@@ -604,24 +604,24 @@ mod_env_idx_cor$pval <- sapply(mod_env_idx_cor$pval, function(x) round(x, digits
 env_idx <- fread(env_idx_file, header = TRUE, data.table = FALSE)
 
 for (row in 1:nrow(mod_env_idx_cor)) {
-  
+
   # load module data
   load(meff_mod_Rdata)
-  
+
   # get module eigenvalues
-  MEs <- rownames_to_column(MEs, var = "env") %>% 
-    select(env, mod_env_idx_cor[row, "module"]) %>% 
-    pivot_longer(-env, names_to = "type", values_to = "value") %>% 
+  MEs <- rownames_to_column(MEs, var = "env") %>%
+    select(env, mod_env_idx_cor[row, "module"]) %>%
+    pivot_longer(-env, names_to = "type", values_to = "value") %>%
     mutate(env = gsub(".", "-", env, fixed = TRUE),
            type = gsub("^ME", "", type, perl = TRUE))
   
   # get environments to keep
   envs_to_keep <- unique(MEs$env)
-  
+
   # get env idx results
-  env_idx_net <- subset(env_idx, env %in% envs_to_keep & covariable == mod_env_idx_cor[row, "env_idx"]) %>% 
+  env_idx_net <- subset(env_idx, env %in% envs_to_keep & covariable == mod_env_idx_cor[row, "env_idx"]) %>%
     rename(type = "covariable")
-  
+
   # # plot ME and env idx in their own scales
   # plot_mod_env_idx <- rbind(MEs, env_idx_net) %>%
   #   ggplot(aes(x = env, y = value, color = type)) +
@@ -635,17 +635,17 @@ for (row in 1:nrow(mod_env_idx_cor)) {
   #                          ~ "pamStage:" ~ bold(.(mod_env_idx_cor[row, "pamStage"])))) +
   #   theme_bw() +
   #   theme(panel.grid.minor = element_blank())
-  
+
   # normalize to same scale
   MEs$value <- sapply(MEs$value, function(x) (x - min(MEs$value))/(max(MEs$value) - min(MEs$value)))
   env_idx_net$value <- sapply(env_idx_net$value, function(x) (x - min(env_idx_net$value))/(max(env_idx_net$value) - min(env_idx_net$value)))
-  
+
   # plot them together
-  plot_mod_env_idx_norm <- rbind(MEs, env_idx_net) %>%  
-    mutate(type = factor(type, levels = unique(type))) %>% 
+  plot_mod_env_idx_norm <- rbind(MEs, env_idx_net) %>%
+    mutate(type = factor(type, levels = unique(type))) %>%
     ggplot(aes(x = env, y = value, color = type)) +
     geom_line(aes(group = type), size = 1) +
-    scale_color_manual(values = c(gsub("^ME", "",  mod_env_idx_cor[row, "module"], perl = TRUE), "grey70")) + 
+    scale_color_manual(values = c(gsub("^ME", "",  mod_env_idx_cor[row, "module"], perl = TRUE), "grey70")) +
     scale_y_continuous(breaks = c(0, 0.5, 1)) +
     labs(x = "Environments", y = "Normalized value", color = "Eigenvalues") +
     theme_bw() +
@@ -661,7 +661,7 @@ for (row in 1:nrow(mod_env_idx_cor)) {
           legend.margin = margin(0,0,0,0))
   ggsave(filename = paste0(output_folder, "/fig_6b", row, ".png"), plot = plot_mod_env_idx_norm,
          device = "png", dpi = 350, units = "in", width = 4, height = 2)
-  
+
 }
 
 
@@ -677,19 +677,19 @@ pca_contrib[, c("idx", "interval")] <- do.call(rbind, lapply(pca_contrib$env_idx
 }))
 
 pca_contrib <- pca_contrib %>%
-  select(-env_idx) %>% 
-  pivot_longer(-c(idx, interval), names_to = "pc", values_to = "contrib") %>% 
+  select(-env_idx) %>%
+  pivot_longer(-c(idx, interval), names_to = "pc", values_to = "contrib") %>%
   mutate(interval = as.numeric(interval))
 
 for (row in 1:nrow(mod_env_idx_cor)) {
-  
+
   # get pc
   PC <- mod_env_idx_cor[row, "env_idx"]
-  
+
   # plot summary contributions
   plot_summary_pc <- pca_contrib %>%
     filter(pc == PC) %>%
-    arrange(desc(contrib)) %>% 
+    arrange(desc(contrib)) %>%
     ggplot(aes(x = interval, y = contrib)) +
     facet_wrap(~ idx, ncol = 6) +
     geom_smooth(se = TRUE, color = "grey30") +
@@ -705,7 +705,7 @@ for (row in 1:nrow(mod_env_idx_cor)) {
   scale_y_continuous(breaks = seq(0, round(max(ggplot_build(plot_summary_pc)$data[[1]]["y"]), digits = 1), length.out = 2))
   ggsave(filename = paste0(output_folder, "/fig_6c", row, "_", PC, ".png"), plot = plot_summary_pc,
          device = "png", dpi = 350, units = "in", width = 4, height = 3)
-  
+
 }
 
 # clean R environment
@@ -728,9 +728,9 @@ net_alias$Model <- factor(net_alias$Model, levels = c("GWAS", "RR-BLUP"), labels
 net_alias$Normalization <- factor(net_alias$Normalization, levels = c("Minmax", "Z-score"), labels = c("minmax", "zscore"))
 
 for (idx in indices) {
-  
+
   list_markers_for_ld <- paste0("analysis/networks/YLD/overlap_markers/markers_correlated_", idx, ".txt")
-  
+
   # load module-env index relationship
   mod_env_idx_cor <- fread(mod_env_idx_cor_file, header = TRUE, data.table = FALSE)
   # select only significant associations
@@ -741,25 +741,25 @@ for (idx in indices) {
   mod_env_idx_cor$pval <- sapply(mod_env_idx_cor$pval, function(x) round(x, digits = 2))
   # correct module name
   mod_env_idx_cor$module <- gsub("^ME", "", mod_env_idx_cor$module, perl = TRUE)
-  
+
   # split data to loop through groups
   mod_env_idx_cor_split <- split(mod_env_idx_cor, mod_env_idx_cor[, "env_idx"])
-  
+
   # get only modules associated with that env_idx
   sig_env_idx <- mod_env_idx_cor_split[[idx]]
-  
+
   # create empty dataframe to store markers from different networks
   markers_mod_idx <- data.frame(stringsAsFactors = FALSE)
-  
+
   for (row in 1:nrow(sig_env_idx)) {
-    
+
     # get details about network
     model <- sig_env_idx[row, "meff_model"]
     norm <- sig_env_idx[row, "norm_method"]
     size <- sig_env_idx[row, "minsize"]
     pam <- sig_env_idx[row, "pamStage"]
     module <- gsub("^ME", "", sig_env_idx[row, "module"], perl = TRUE)
-    
+
     # get markers in module for a specific network
     network_mod_markers <- paste0("analysis/networks/YLD/meff_", model, "/norm_", norm,
                                   "/min_mod_size_", size, "/pamStage_", pam,
@@ -767,7 +767,7 @@ for (idx in indices) {
     network_mod_markers <- fread(network_mod_markers, header = TRUE, data.table = FALSE)
     network_mod_markers <- network_mod_markers[network_mod_markers$source == "TOM", c("module", "marker")]
     network_mod_markers <- network_mod_markers[network_mod_markers$module == module, ]
-    
+
     # add network settings
     net_name <- subset(net_alias, Model == model & Normalization == norm & `Minimum module size` == size & pamStage == pam)[, 1]
     network_mod_markers <- data.frame(network = net_name,
@@ -775,10 +775,10 @@ for (idx in indices) {
     network_mod_markers <- tidyr::unite(network_mod_markers, Network:module, col = "network_module", sep = "-")
     # get accuracy results
     markers_mod_idx <- rbind(markers_mod_idx, network_mod_markers)
-    
+
   }
   rm(network_mod_markers)
-  
+
   # transform df into list
   list_markers_mod_idx <- list()
   for (net in unique(markers_mod_idx$network_module)) {
@@ -791,10 +791,10 @@ for (idx in indices) {
 
   # read LD file
   ld_file <- fread(gsub(".txt", ".ld.gz", list_markers_for_ld), header = TRUE, data.table = FALSE)
-  
+
   # substitute the name of markers in LD to each other with a representative marker
   for (mod in names(list_markers_mod_idx)) {
-    
+
     for (marker in 1:length(list_markers_mod_idx[[mod]])) {
       # get marker name
       marker_name <- list_markers_mod_idx[[mod]][marker]
@@ -809,12 +809,12 @@ for (idx in indices) {
         list_markers_mod_idx[[mod]][marker] <- marker_ld
       }
     }
-    
+
     # keep redundant marker names
     list_markers_mod_idx[[mod]] <- unique(list_markers_mod_idx[[mod]])
-    
+
   }
-  
+
   # rename networks for plotting
   names(list_markers_mod_idx) <- sapply(names(list_markers_mod_idx), function(x) {
     paste0("network ", gsub("_", "\n(", x), ")")
@@ -833,7 +833,7 @@ for (idx in indices) {
   #   paste0("network ", gsub("_", " - ", x["name"]), "\n(cor: ", x["cor"], ", pval: ", x["pval"], ")")
   # })
   # names(list_markers_mod_idx) <- sig_env_idx[, "alias"]
-  
+
   # plot intersections of markers
   upset_plot <- upset(fromList(list_markers_mod_idx), sets = rev(names(list_markers_mod_idx)), keep.order = TRUE,
                       mainbar.y.label = paste0("Shared\nmarkers\nassociated\nwith ", idx), sets.x.label = "Markers per module",
@@ -842,7 +842,7 @@ for (idx in indices) {
   png(paste0(output_folder, "/fig_7", letters[which(idx == indices)], ".png"), units = "in", res = 350, width = 4, height = 2.5)
   print(upset_plot)
   dev.off()
-  
+
 }
 
 # clean R environment
@@ -872,7 +872,7 @@ rm(list = ls())
 # output from 'scripts/pca_env_idx.R'
 
 
-#### supp figure 5 ---- 
+#### supp figure 5 ----
 
 results_folder <- "analysis/networks/YLD"
 output_folder <- "figures"
@@ -882,33 +882,33 @@ sft_all <- data.frame(stringsAsFactors = FALSE)
 
 for (model in c("rrblup", "gwas")) {
   for (norm in c("minmax", "zscore")) {
-    
+
     if (norm == "minmax") {
       for (cv in c(0.05, 0.075, 0.1, 0.125, 0.15, 0.175, 0.2, 0.25)) {
-        
+
         # load file
         sft_file <- paste0(results_folder, "/meff_", model, "/norm_", norm,
                            "/cv_thresholds/scale-free_topology_fit_index.cv-", cv, ".txt")
         sft_results <- fread(sft_file, header = TRUE, data.table = FALSE)
         # get results
         sft_all <- rbind(sft_all, data.frame(model = model, norm = norm,  cv = cv, sft_results))
-        
+
       }
     }
-    
+
     if (any(norm == "zscore" | norm == "none")) {
       for (cv in c(0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 1)) {
-        
+
         # load file
         sft_file <- paste0(results_folder, "/meff_", model, "/norm_", norm,
                            "/cv_thresholds/scale-free_topology_fit_index.cv-", cv, ".txt")
         sft_results <- fread(sft_file, header = TRUE, data.table = FALSE)
         # get results
         sft_all <- rbind(sft_all, data.frame(model = model, norm = norm,  cv = cv, sft_results))
-        
+
       }
     }
-    
+
   }
 }
 rm(sft_results)
@@ -920,7 +920,7 @@ sft_all$signed_R2 <- -sign(sft_all$slope) * sft_all$SFT.R.sq
 
 mean_k_plot <- sft_all %>%
   mutate(norm = factor(norm, levels = c("minmax", "zscore"), labels = c("Minmax", "Z-score")),
-         model = factor(model, levels = c("gwas", "rrblup"), labels = c("GWAS", "rrBLUP"))) %>% 
+         model = factor(model, levels = c("gwas", "rrblup"), labels = c("GWAS", "rrBLUP"))) %>%
   ggplot(aes(x = Power, y = mean.k., group = as.factor(cv), color = as.factor(cv))) +
   facet_grid(model ~ norm) +
   geom_line() +
@@ -939,7 +939,7 @@ ggsave(filename = paste0(output_folder, "/supp_fig_4a.png"), plot = mean_k_plot,
 
 median_k_plot <- sft_all %>%
   mutate(norm = factor(norm, levels = c("minmax", "zscore"), labels = c("Minmax", "Z-score")),
-         model = factor(model, levels = c("gwas", "rrblup"), labels = c("GWAS", "rrBLUP"))) %>% 
+         model = factor(model, levels = c("gwas", "rrblup"), labels = c("GWAS", "rrBLUP"))) %>%
   ggplot(aes(x = Power, y = median.k., group = as.factor(cv), color = as.factor(cv))) +
   facet_grid(model ~ norm) +
   geom_line() +
@@ -971,15 +971,15 @@ for (model in c("gwas", "rrblup")) {
   for (norm in c("minmax", "zscore")) {
     for (size in c(25, 50, 100)) {
       for (pam in c("off", "on")) {
-        
+
         # get filename
         meff_mod <- paste0(input_folder, "/meff_", model, "/norm_", norm,
                            "/min_mod_size_", size, "/pamStage_", pam,
                            "/define_network_modules.RData")
-        
+
         # exclude networks with gwas and 100 min mod size
         if (!all(model == "gwas" & size == 100)) {
-          
+
           # load data
           load(meff_mod)
           # plot heatmap
@@ -988,9 +988,9 @@ for (model in c("gwas", "rrblup")) {
           dev.off()
           # add count
           i <- i + 1
-          
+
         }
-        
+
       }
     }
   }
@@ -1013,14 +1013,14 @@ for (model in c("gwas", "rrblup")) {
   for (norm in c("minmax", "zscore")) {
     for (size in c(25, 50, 100)) {
       for (pam in c("off", "on")) {
-        
+
         # get filename
         meff_mod_Rdata <- paste0("analysis/networks/YLD/meff_", model, "/norm_", norm, "/min_mod_size_", size,
                                  "/pamStage_", pam, "/define_network_modules.RData")
-        
+
         # exclude networks with gwas and 100 min mod size
         if (!all(model == "gwas" & size == 100)) {
-          
+
           # load data
           mod_env_idx_results <- fread(mod_env_idx_cor_file, header = TRUE, data.table = FALSE)
 
@@ -1048,12 +1048,12 @@ for (model in c("gwas", "rrblup")) {
             theme(panel.grid = element_blank())
           ggsave(filename = paste0(output_folder, "/supp-fig_7-net_", i, ".pdf"), plot = plot_cor_mod_pc,
                  device = "pdf", units = "in", width = 4, height = 4)
-          
+
           # add count
           i <- i + 1
-          
+
         }
-        
+
       }
     }
   }
@@ -1061,4 +1061,3 @@ for (model in c("gwas", "rrblup")) {
 
 # clean R environment
 rm(list = ls())
-
