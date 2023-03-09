@@ -29,7 +29,7 @@ by Rafael Della Coletta and Candice Hirsch
 
 ## Important notes!
 
-All data necessary to replicate this analysis are available in the Data Repository for the University of Minnesota (DRUM): **ADD DOI HERE!**. When submitting the files for publication, I named them Files S1-S6 for easier reference within the manuscript. However, please rename them to their original filenames before running any of the scripts according to this table:
+All data necessary to replicate this analysis are available in the Data Repository for the University of Minnesota (DRUM): https://doi.org/10.13020/b1e0-q828. When submitting the files for publication, I named them Files S1-S6 for easier reference within the manuscript. However, please rename them to their original filenames before running any of the scripts according to this table:
 
 | File | Name                                                                 |
 | ---- | -------------------------------------------------------------------- |
