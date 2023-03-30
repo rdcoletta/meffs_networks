@@ -1,7 +1,12 @@
 analysis/*
 data/*
 figures/*
-supp_materials/*
+supp_materials/*.png
+supp_materials/*.pdf
+supp_materials/*.csv
+supp_materials/*.txt
+supp_materials/.DS_Store
+supp_materials/list_supp_materials.xlsx
 .DS_Store
 .Rproj.user
 *.Rhistory
