@@ -27,50 +27,48 @@ dir.create("figures")
 ##### a #####
 
 input_folder <- "analysis/marker_effects/YLD"
-blues_file <- "data/1stStage_BLUEs.YLD-per-env.txt"
 env_idx_file <- "data/env_covariables/env_covariables_means_per_intervals.txt"
 output_folder <- "figures"
 
 # create empty data frames to store results across models
-gebvs_all <- data.frame(stringsAsFactors = FALSE)
+meffs_all <- data.frame(stringsAsFactors = FALSE)
 
 for (model in c("rrblup", "gwas")) {
-
+  
   # get filename
-  file_gebvs <- paste0(input_folder, "/GEBVs.", model, ".txt")
+  file_meffs <- paste0(input_folder, "/marker_effects.", model, ".txt")
   # load file
-  gebvs <- fread(file_gebvs, header = TRUE, data.table = FALSE)
+  meffs <- fread(file_meffs, header = TRUE, data.table = FALSE)
   # transform to long format
-  gebvs <- pivot_longer(gebvs, -genotype, names_to = "env", values_to = "gebv")
+  meffs <- pivot_longer(meffs, -marker, names_to = "env", values_to = "meff")
   # append results to main df
-  gebvs_all <- rbind(gebvs_all, data.frame(gebvs, model = model))
-
+  meffs_all <- rbind(meffs_all, data.frame(meffs, model = model))
+  
 }
 
-# read file with genotype means for each environment
-means <- fread(blues_file, header = TRUE, data.table = FALSE)
-means <- data.frame(means, model = "real_pheno")
-colnames(means) <- colnames(gebvs_all)
-# correct env names for compatibility
-gebvs_all$env <- gsub(".", "-", gebvs_all$env, fixed = TRUE)
-# append means to gebv df
-gebvs_all <- rbind(gebvs_all, means)
-# adjust factor levels for plotting
-gebvs_all$model <- factor(gebvs_all$model, levels = c("rrblup", "gwas", "real_pheno"))
+# correct env names
+meffs_all$env <- gsub(".", "-", meffs_all$env, fixed = TRUE)
+# adjust df for plotting
+meffs_all <- pivot_wider(meffs_all, names_from = "model", values_from = "meff")
 
 # compare distribution of gebvs with real data
-plot_boxplot_gebvs <- ggplot(gebvs_all) +
-  geom_boxplot(aes(x = env, y = gebv, fill = model)) +
-  labs(x = "Environments", y = "Grain yield", fill = "Data type") +
-  scale_fill_manual(values = c("#1b9e77", "#d95f02", "#7570b3"),
-                    labels = c("RR-BLUP", "GWAS", "Observed")) +
+plot_scatter_meffs <- ggplot(meffs_all, aes(x = rrblup, y = gwas)) +
+  # geom_point(alpha = 0.3) +
+  geom_hex(bins = 100) +
+  # scale_fill_continuous(type = "viridis") +
+  scale_fill_viridis_c(end = 0.9, option = "B", direction = 1) +
+  # geom_smooth(method = "lm", formula = y ~ x, se = TRUE) +
+  labs(x = "RR-BLUP effects", y = "GWAS effects", fill = "Count") +
   theme_bw() +
   theme(panel.grid = element_blank(),
         axis.title = element_text(size = 12),
-        axis.text = element_text(size = 10))
-ggsave(filename = paste0(output_folder, "/fig_1a.png"), plot = plot_boxplot_gebvs,
-       device = "png", dpi = 350, units = "in", width = 8, height = 2)
-
+        axis.text = element_text(size = 10),
+        legend.key.size = unit(0.2, 'in'),
+        legend.key.width = unit(0.1, "in"),
+        legend.title = element_text(size = 8), #change legend title font size
+        legend.text = element_text(size = 8)) #change legend text font size
+ggsave(filename = paste0(output_folder, "/fig_1a.png"), plot = plot_scatter_meffs,
+       device = "png", dpi = 350, units = "in", width = 4, height = 2)
 
 ##### b #####
 
