@@ -692,16 +692,29 @@ Total number of hybrids evaluated per environment:
 
 ## Estimate marker effects
 
-We will estimate marker effects for the trait using two different models to see how much the network changes based on the type of model selected. The rationale for using more than one model is that different models may be better for a certain genetic architecture, which is unknown from empirical data. In addition, we chose to use marker dataset pruned in 100kb windows to balance the number of markers vs computation time.
+We will estimate marker effects for the trait using two different models to see how much the network changes based on the type of model selected. The rationale for using more than one model is that different models may be better for a certain genetic architecture, which is unknown from empirical data. For the additive GWAS model, we also perform PCA to identify how many principal components should be used to account for population structure.
+
+```bash
+module load R/3.6.0
+
+# calculate PCA prior gwas
+Rscript scripts/pca_prior_gwas.R \
+        data/usda_hybrids_SNP-chip.maf-filter.pruned.hmp.txt \
+        additive \
+        analysis/pca_prior_gwas
+```
+
+> Number of PCs to use based on PCA plot above is 6
 
 ```bash
 # estimate effects
-MARKERS=data/usda_hybrids_SNP-chip.maf-filter.pruned-100kb.geno-miss-0.25.hmp.txt
+MARKERS=data/usda_hybrids_SNP-chip.maf-filter.pruned.hmp.txt
+PCS=6
 for trait in YLD; do
   BLUES=data/1stStage_BLUEs.${trait}-per-env.txt
   OUTFOLDER=analysis/marker_effects/${trait}
   for marker_eff_model in rrblup gwas; do
-    sbatch --export=MARKERS=${MARKERS},BLUES=${BLUES},OUTFOLDER=${OUTFOLDER},MEFFMODEL=${marker_eff_model} scripts/estimate_marker_effects.sh
+    sbatch --export=MARKERS=${MARKERS},BLUES=${BLUES},OUTFOLDER=${OUTFOLDER},MEFFMODEL=${marker_eff_model},PCS=${PCS} scripts/estimate_marker_effects.sh
   done
 done
 
@@ -712,20 +725,6 @@ Rscript scripts/plot_marker_effects.R analysis/marker_effects \
                                       --traits=YLD \
                                       --models=rrblup,gwas
 ```
-
-Correlation between real phenotypes and predicted GEBVs:
-
-| env      | rrBLUP | GWAS |
-| -------- | ------ | ---- |
-| BEC-BL19 | 0.86   | 0.86 |
-| BEC-BL20 | 0.72   | 0.72 |
-| COR19    | 0.77   | 0.76 |
-| COR20    | 0.82   | 0.82 |
-| MIN19    | 0.78   | 0.79 |
-| MIN20    | 0.72   | 0.7  |
-| SYN19    | 0.82   | 0.83 |
-| SYN20    | 0.75   | 0.74 |
-| URB19    | 0.77   | 0.77 |
 
 
 
@@ -763,7 +762,7 @@ In order to build networks with WGCNA, I need to specify a power to model the sc
 
 ```bash
 # marker file
-MARKERS=data/usda_hybrids_SNP-chip.maf-filter.pruned-100kb.geno-miss-0.25.hmp.txt
+MARKERS=data/usda_hybrids_SNP-chip.maf-filter.pruned.hmp.txt
 # trait to build network
 TRAIT=YLD
 
@@ -1123,7 +1122,7 @@ An important thing to check is how many markers in a module are in LD with each 
 # trait to build network
 TRAIT=YLD
 # genotypic data of markers
-MARKERS=data/usda_hybrids_SNP-chip.maf-filter.pruned-100kb.geno-miss-0.25.hmp.txt
+MARKERS=data/usda_hybrids_SNP-chip.maf-filter.pruned.hmp.txt
 
 # marker effects from rrblup
 for meff_model in rrblup gwas; do
@@ -1309,7 +1308,7 @@ for idx_type in means intervals pca fw; do
   Rscript scripts/markers_correlated_same_env_idx.R \
           analysis/networks/YLD \
           analysis/networks/YLD/module-env-idx_per_network.${idx_type}.txt \
-          data/usda_hybrids_SNP-chip.maf-filter.pruned-100kb.geno-miss-0.25.hmp.txt \
+          data/usda_hybrids_SNP-chip.maf-filter.pruned.hmp.txt \
           analysis/networks/YLD/overlap_markers \
           --p-value=${PVAL}
 

@@ -30,6 +30,7 @@ optional argument:
                               the hapmap numericalization step (default: 'Middle')
   --no-missing-genotypes      exclude genotypes with missing data in any environment
   --gwas-output               add this option to save GAPIT GWAS output
+  --gwas-pcs=VALUE            number of principal components to be used in GWAS (default: 5)
 
 
 "
@@ -64,6 +65,7 @@ impute_effect <- "Add"
 impute_type <- "Middle"
 no_missing_genotypes <- FALSE
 gwas_output <- FALSE
+gwas_pcs <- "5"
 
 # assert to have the correct optional arguments
 pos_args <- 3
@@ -73,7 +75,7 @@ if (length(args) > pos_args) {
 
   opt_args <- args[-1:-pos_args]
   opt_args_allowed <- c("--marker-eff-model", "--impute-effect", "--impute-type",
-                        "--no-missing-genotypes", "--gwas-output")
+                        "--no-missing-genotypes", "--gwas-output", "--gwas-pcs")
   opt_args_requested <- as.character(sapply(opt_args, function(x) unlist(strsplit(x, split = "="))[1]))
   if (any(!opt_args_requested %in% opt_args_allowed)) stop(usage(), "wrong optional argument(s)")
 
@@ -99,6 +101,12 @@ if (!impute_effect %in% c("Add", "Dom", "Minor")) {
 
 if (!impute_type %in% c("Major", "Middle", "Minor")) {
   stop("Optional argument '--impute-type' should be 'Major', 'Middle' or 'Minor'")
+}
+
+if (suppressWarnings(!is.na(as.integer(gwas_pcs)))) {
+  gwas_pcs <- as.integer(gwas_pcs)
+} else {
+  stop("Optional argument '--gwas-pcs' should be an integer")
 }
 
 
@@ -284,7 +292,7 @@ if (marker_eff_model == "gwas") {
                         GD = geno,
                         GM = map,
                         kinship.algorithm = "VanRaden",
-                        PCA.total = 5,
+                        PCA.total = gwas_pcs,
                         model = "MLM",
                         file.output = gwas_output)
     sink()
@@ -301,7 +309,7 @@ if (marker_eff_model == "gwas") {
     # calculate cor obs vs pred
     cor_obs_pred <- cor(as.numeric(means[, env]), as.numeric(gebvs_env[, env]), use = "complete.obs")
     cat("  ", env, " - correlation obs vs pred:", round(cor_obs_pred, digits = 2), "\n")
-    
+
     # calculate residuals
     residuals <- as.numeric(means[, env]) - as.numeric(gebvs_env[, env])
     residuals <- data.frame(residuals = sort(residuals))
@@ -321,7 +329,7 @@ if (marker_eff_model == "gwas") {
       theme_light()
     ggsave(residuals_qq, filename = paste0(residuals_folder, "/qq_", marker_eff_model, "_", env, ".pdf"),
            device = "pdf", units = "in", width = 4, height = 4)
-    
+
     # append effects to main df
     marker_effects <- cbind(marker_effects, marker_effects_env)
     gebvs <- cbind(gebvs, gebvs_env)

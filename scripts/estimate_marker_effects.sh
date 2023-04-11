@@ -12,6 +12,9 @@
 
 module load R/3.6.0
 
+# check whether --per-intervals option was requested or not -- if not, set it to blank
+[[ -z ${PCS} ]] && PCS="" || PCS="--gwas-pcs=${PCS}"
+
 # go to project folder
 cd ~/projects/marker-effects_networks
 
@@ -23,11 +26,11 @@ echo ""
 
 # estimate effects - all data
 Rscript scripts/estimate_marker_effects.R ${MARKERS} ${BLUES} ${OUTFOLDER} \
-                                          --marker-eff-model=${MEFFMODEL}
+                                          --marker-eff-model=${MEFFMODEL} ${PCS}
 
 echo ""
 
 # estimate effects - only non-missing genotypes
 Rscript scripts/estimate_marker_effects.R ${MARKERS} ${BLUES} ${OUTFOLDER} \
-                                          --marker-eff-model=${MEFFMODEL} \
+                                          --marker-eff-model=${MEFFMODEL} ${PCS} \
                                           --no-missing-genotypes
