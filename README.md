@@ -870,7 +870,7 @@ for meff_model in rrblup gwas; do
     # power for which the scale-free topology fit index curve
     SFT=24
     # minimum number of markers per module
-    for minsize in 25 50 100; do
+    for minsize in 10 25 50; do
       # define modules with and without the PAM stage
       for pam in on off; do
         # threshold to merge similar modules based on their eigengenes
@@ -886,7 +886,7 @@ for meff_model in rrblup gwas; do
 done
 ```
 
-> Modules from `gwas` networks with `100` minimum number of markers couldn't be defined.
+> Modules from networks with `50` minimum number of markers couldn't be defined.
 
 
 
@@ -903,7 +903,7 @@ for meff_model in rrblup gwas; do
   # type of normalization method to use
   for norm_method in minmax zscore; do
     # minimum number of markers per module
-    for minsize in 25 50 100; do
+    for minsize in 10 25 50; do
       # define modules with and without the PAM stage
       for pam in on off; do
         # folder with results
@@ -922,7 +922,7 @@ for meff_model in rrblup gwas; do
 done
 
 # summarize network quality results
-Rscript scripts/summarize_qc_networks.R analysis/networks/YLD
+Rscript scripts/summarize_qc_networks.R analysis/networks/YLD --minsize=10,25,50
 ```
 
 > In general, kDiff plots from rrBLUP effects networks seem to be have better quality modules (i.e. markers with more connections within their own module than with other modules) than those from GWAS effects networks. It's hard to tell if turning off the `pamStage` when assigning modules had any meaningful impact on kDiff, cluster coefficient and TOM plots than when this option is on.
@@ -941,7 +941,7 @@ for meff_model in rrblup gwas; do
   # type of normalization method to use
   for norm_method in minmax zscore; do
     # minimum number of markers per module
-    for minsize in 25 50 100; do
+    for minsize in 10 25; do
       # folder with results
       FOLDER=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}/min_mod_size_${minsize}
       echo -e "\n${FOLDER}\n"
@@ -980,52 +980,23 @@ for meff_model in rrblup gwas; do
     # define modules with and without the PAM stage
     for pam in on off; do
       # folder with results
+      FOLDER10=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}/min_mod_size_10/pamStage_${pam}
       FOLDER25=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}/min_mod_size_25/pamStage_${pam}
-      FOLDER50=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}/min_mod_size_50/pamStage_${pam}
-      FOLDER100=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}/min_mod_size_100/pamStage_${pam}
       # output folders
-      OUT25v50=analysis/networks/${TRAIT}/network_comparisons/minsize_25-vs-50/meff_${meff_model}/norm_${norm_method}/pamStage_${pam}
-      mkdir -p ${OUT25v50}
-      OUT50v100=analysis/networks/${TRAIT}/network_comparisons/minsize_50-vs-100/meff_${meff_model}/norm_${norm_method}/pamStage_${pam}
-      mkdir -p ${OUT50v100}
-      OUT25v100=analysis/networks/${TRAIT}/network_comparisons/minsize_25-vs-100/meff_${meff_model}/norm_${norm_method}/pamStage_${pam}
-      mkdir -p ${OUT25v100}
-      # compare 25 vs 50
+      OUT10v25=analysis/networks/${TRAIT}/network_comparisons/minsize_10-vs-25/meff_${meff_model}/norm_${norm_method}/pamStage_${pam}
+      mkdir -p ${OUT10v25}
+      # compare 10 vs 25
       echo -e "\n${FOLDER25}\n${FOLDER50}\n"
       Rscript scripts/compare_two_networks.R \
+              ${FOLDER10}/define_network_modules.RData \
               ${FOLDER25}/define_network_modules.RData \
-              ${FOLDER50}/define_network_modules.RData \
+              ${FOLDER10}/module_membership.txt \
               ${FOLDER25}/module_membership.txt \
-              ${FOLDER50}/module_membership.txt \
+              ${FOLDER10}/kDiff_per_module.txt \
               ${FOLDER25}/kDiff_per_module.txt \
-              ${FOLDER50}/kDiff_per_module.txt \
-              ${OUT25v50} \
-              --name-net1="min_mod_size_25" \
-              --name-net2="min_mod_size_50" 2> /dev/null
-      # compare 50 vs 100
-      echo -e "\n${FOLDER50}\n${FOLDER100}\n"
-      Rscript scripts/compare_two_networks.R \
-              ${FOLDER50}/define_network_modules.RData \
-              ${FOLDER100}/define_network_modules.RData \
-              ${FOLDER50}/module_membership.txt \
-              ${FOLDER100}/module_membership.txt \
-              ${FOLDER50}/kDiff_per_module.txt \
-              ${FOLDER100}/kDiff_per_module.txt \
-              ${OUT50v100} \
-              --name-net1="min_mod_size_50" \
-              --name-net2="min_mod_size_100" 2> /dev/null
-      # compare 25 vs 100
-      echo -e "\n${FOLDER25}\n${FOLDER100}\n"
-      Rscript scripts/compare_two_networks.R \
-              ${FOLDER25}/define_network_modules.RData \
-              ${FOLDER100}/define_network_modules.RData \
-              ${FOLDER25}/module_membership.txt \
-              ${FOLDER100}/module_membership.txt \
-              ${FOLDER25}/kDiff_per_module.txt \
-              ${FOLDER100}/kDiff_per_module.txt \
-              ${OUT25v100} \
-              --name-net1="min_mod_size_25" \
-              --name-net2="min_mod_size_100" 2> /dev/null
+              ${OUT10v25} \
+              --name-net1="min_mod_size_10" \
+              --name-net2="min_mod_size_25" 2> /dev/null
     done
   done
 done
@@ -1043,7 +1014,7 @@ TRAIT=YLD
 # marker effects from rrblup
 for meff_model in rrblup gwas; do
   # minimum number of markers per module
-  for minsize in 25 50 100; do
+  for minsize in 10 25; do
     # define modules with and without the PAM stage
     for pam in on off; do
       # folder with results
@@ -1070,7 +1041,7 @@ for meff_model in rrblup gwas; do
 done
 ```
 
-> Comparisons are even harder here because different normalizations had different CV cutoffs and not many markers overlap between the networks (~20-40%). Module relationship rarely follow a 1:1 ratio, so other metrics (e.g. kDiff) may be more informative about which network has better quality.
+> Module relationship rarely follow a 1:1 ratio, so other metrics (e.g. kDiff) may be more informative about which network has better quality.
 
 **rrBLUP vs GWAS effects**
 
@@ -1082,7 +1053,7 @@ TRAIT=YLD
 # type of normalization method to use
 for norm_method in minmax zscore; do
   # minimum number of markers per module
-  for minsize in 25 50 100; do
+  for minsize in 10 25; do
     # define modules with and without the PAM stage
     for pam in on off; do
       # folder with results
@@ -1109,7 +1080,7 @@ for norm_method in minmax zscore; do
 done
 ```
 
-> There's more overlap of markers between different marker effect type (~40-60%) than between normalization methods (~20-40%), but there's still a lot of modules that are split between marker effect types (i.e. not a 1:1 ratio).
+> There's still a lot of modules that are split between marker effect types (i.e. not a 1:1 ratio).
 
 
 
@@ -1129,7 +1100,7 @@ for meff_model in rrblup gwas; do
   # type of normalization method to use
   for norm_method in minmax zscore; do
     # minimum number of markers per module
-    for minsize in 25 50 100; do
+    for minsize in 10 25; do
       # define modules with and without the PAM stage
       for pam in on off; do
         # folder with results
@@ -1151,7 +1122,7 @@ for meff_model in rrblup gwas; do
   # type of normalization method to use
   for norm_method in minmax zscore; do
     # minimum number of markers per module
-    for minsize in 25 50 100; do
+    for minsize in 10 25; do
       # define modules with and without the PAM stage
       for pam in on off; do
         # folder with results
@@ -1169,7 +1140,7 @@ for meff_model in rrblup gwas; do
   # type of normalization method to use
   for norm_method in minmax zscore; do
     # minimum number of markers per module
-    for minsize in 25 50 100; do
+    for minsize in 10 25; do
       # define modules with and without the PAM stage
       for pam in on off; do
         # folder with results
@@ -1240,7 +1211,7 @@ for meff_model in rrblup gwas; do
   # type of normalization method to use
   for norm_method in minmax zscore; do
     # minimum number of markers per module
-    for minsize in 25 50 100; do
+    for minsize in 10 25; do
       # define modules with and without the PAM stage
       for pam in on off; do
         # folder with results
@@ -1268,7 +1239,7 @@ for meff_model in rrblup gwas; do
 done
 
 # summarize correlations
-Rscript scripts/summarize_mod-env-idx_relationship.R analysis/networks/YLD
+Rscript scripts/summarize_mod-env-idx_relationship.R analysis/networks/YLD --minsize=10,25
 ```
 
 Finally, plot the relationship between environmental indices and module eigeinvalues, the markers from different networks correlated with same environmental index, and the top covariables that contributes the most to each principal component of the PCA analysis.
