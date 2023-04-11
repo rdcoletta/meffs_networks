@@ -12,6 +12,8 @@ by Rafael Della Coletta and Candice Hirsch
     - [Convert SNP coordinates from B73v2 to B73v4](#convert-snp-coordinates-from-b73v2-to-b73v4)
     - [Correct miscalls with sliding window approach](#correct-miscalls-with-sliding-window-approach)
     - [Generate hybrid genotypes](#generate-hybrid-genotypes)
+    - [Calculate background LD](#calculate-background-ld)
+    - [Calculate LD decay](#calculate-ld-decay)
     - [Prune markers by LD](#prune-markers-by-ld)
   - [Phenotypic data](#phenotypic-data)
   - [Estimate marker effects](#estimate-marker-effects)
@@ -433,35 +435,171 @@ sbatch --export=HMP=data/usda_hybrids_SNP-chip.maf-filter.hmp.txt,FOLDER=analysi
 | 0.5            | 14,466   |
 
 
+### Calculate background LD
+
+We need to remove markers in LD with each other to reduce noise that goes to the network. So first, we calculated the background LD in this population by measuring LD from 50 random markers from different chromosomes, as described in
+[Vos et al., 2017, TAG](https://link.springer.com/article/10.1007/s00122-016-2798-8).
+
+```bash
+# create folder to save results
+FOLDER=analysis/background_ld
+mkdir -p ${FOLDER}
+
+# hapmap file to calculate background ld
+HMP=data/usda_hybrids_SNP-chip.maf-filter.hmp.txt
+
+# create file to store results
+BACKLD=${FOLDER}/average_background_ld.txt
+echo -n "" > ${BACKLD}
+
+# define function to sample different seeds
+get_seeded_random()
+{
+  seed="$1"
+  openssl enc -aes-256-ctr -pass pass:"$seed" -nosalt < /dev/zero 2> /dev/null
+}
+# define initial seed
+SEED=27423
+
+# bootstrap random sampling many times
+for iter in {1..10}; do
+
+  # create folder for iteration
+  mkdir -p ${FOLDER}/iter${iter}
+
+  # randomly select 50 markers per chr
+  for chr in {1..10}; do
+    # sample markers
+    shuf -n 50 --random-source=<(get_seeded_random ${SEED}) <(awk -v chr="$chr" '$3 == chr' ${HMP} | cut -f 1) > ${FOLDER}/iter${iter}/markers_chr${chr}.txt
+    # change seed
+    SEED=($(shuf -i 1-100000 -n 1 --random-source=<(get_seeded_random ${SEED})))
+  done
+
+  # create file to store results
+  BACKLDITER=${FOLDER}/iter${iter}/background_ld.txt
+  echo -n "" > ${BACKLDITER}
+
+  # calculate ld for all markers that are in different chromosomes
+  for chr in {1..10}; do
+    echo "iter${iter} - chr${chr}"
+    # hmp2plk
+    PLK=${FOLDER}/iter${iter}/hybrids_geno
+    run_pipeline.pl -Xmx40g -importGuess ${HMP} \
+                            -includeSiteNamesInFile <(cat ${FOLDER}/iter${iter}/markers_chr*.txt) \
+                            -export ${PLK} \
+                            -exportType Plink > /dev/null
+    # calculate LD
+    plink --file ${PLK}.plk \
+          --make-founders \
+          --r2 gz dprime with-freqs inter-chr \
+          --ld-window-r2 0 \
+          --geno 0.25 \
+          --ld-snp-list ${FOLDER}/iter${iter}/markers_chr${chr}.txt \
+          --out ${FOLDER}/iter${iter}/markers_chr${chr} > /dev/null
+    # add R2 values into file
+    zcat ${FOLDER}/iter${iter}/markers_chr${chr}.ld.gz | sed 's/^ *//' | tr -s " " | tr " " "\t" | awk -v chr=${chr} '$5 != chr' | cut -f 9 | sed 1d >> ${BACKLDITER}
+  done
+
+  # remove extra files
+  rm ${FOLDER}/iter${iter}/*.log
+  rm ${FOLDER}/iter${iter}/*.nosex
+
+  # background ld as 95% of all these pairwise correlations
+
+  # note the number of values in the sample (K)
+  K=$(wc -l ${BACKLDITER} | cut -d " " -f 1)
+  # calculate N. N = K x 0.95.
+  N=$(printf "%.0f" $(echo "${K} * 0.95" | bc))
+  # sort the samples in ascending order
+  # the Nth value in the sorted list will be the 95th percentile value
+  sort -g ${BACKLDITER} | head -n ${N} | tail -n 1 >> ${BACKLD}
+
+  # https://www.manageengine.com/network-monitoring/faq/95th-percentile-calculation.html
+
+done
+
+# get average (and std error) 95th percentile across all iterations
+awk '{s+=$1; ss+=$1^2} END{print m=s/NR, sqrt(ss/NR-m^2)/sqrt(NR)}' ${BACKLD}
+# 0.161117 0.00261363
+```
+
+> The background LD for this population is 0.16.
+
+
+
+### Calculate LD decay
+
+Then, we calculated LD decay and found that LD between markers decay below the background level after ~1Mb.
+
+```bash
+# create directory to store results
+FOLDER=analysis/ld_decay
+mkdir -p ${FOLDER}
+
+# hapmap file to calculate ld decay
+HMP=data/usda_hybrids_SNP-chip.maf-filter.hmp.txt
+
+# convert hapmap to plink format chr by chr using only markers from SNP chip
+PLK=${FOLDER}/hybrids_geno
+run_pipeline.pl -Xmx10g -importGuess ${HMP} \
+                -export ${PLK} \
+                -exportType Plink
+
+# calculate LD
+WINDOW=5000
+plink --file ${PLK}.plk \
+      --make-founders \
+      --r2 gz dprime with-freqs \
+      --ld-window-r2 0 \
+      --ld-window ${WINDOW}000 \
+      --ld-window-kb ${WINDOW} \
+      --geno 0.25 \
+      --out ${FOLDER}/hybrids_geno
+
+# plot decay
+module load R/3.6.0
+BACKLD=0.16
+for type in bins average raw; do
+  Rscript scripts/plot_ld_decay.R ${FOLDER}/hybrids_geno.ld.gz \
+                                  ${FOLDER}/ld_decay.${type}.pdf \
+                                  --decay-plot=${type} \
+                                  --background-ld=${BACKLD}
+done
+```
+
+
+
 ### Prune markers by LD
 
-We need to prune the full dataset (`data/usda_hybrids_SNP-chip.maf-filter.hmp.txt`) based on LD to decrease the number of perfectly correlated markers. I tested three different window sizes and three different missing data thresholds to calculate LD to see how many markers would be removed.
+We need to prune the full dataset (`data/usda_hybrids_SNP-chip.maf-filter.hmp.txt`) based on LD to decrease the number of perfectly correlated markers. I tested three different window sizes and LD thresholds to calculate LD to see how many markers would be removed.
 
 ```bash
 # hapmap file to filter
 HMP=data/usda_hybrids_SNP-chip.maf-filter.hmp.txt
 # prunning parameters
+GENOMISS=0.25
 VARCOUNT=1
-R2=0.9
 
-for genomiss in 0.1 0.25 0.5; do
+# folder to save files
+FOLDER=analysis/ld_pruning
+mkdir -p ${FOLDER}
+
+# transform hmp to plk
+PLK=$(basename ${HMP} .hmp.txt)
+run_pipeline.pl -Xmx40g -importGuess ${HMP} \
+                -export ${FOLDER}/${PLK} \
+                -exportType Plink
+
+for r2 in 0.16 0.25 0.5; do
   for winsize in 10kb 100kb 1000kb; do
-    # folder to save intermediate files
-    FOLDER=analysis/prune_markers_ld/winsize_${winsize}
-    mkdir -p ${FOLDER}
     # output name
-    OUT=data/usda_hybrids_SNP-chip.maf-filter.pruned-${winsize}.geno-miss-${genomiss}.hmp.txt
-    # set intermediate filenames
-    PLK=$(basename ${HMP} .hmp.txt)
+    OUT=${FOLDER}/hybrids_geno.winsize-${winsize}.r2-${r2}.hmp.txt
+    # set intermediate filename
     PRUNNED=$(echo ${PLK}.marker-ids)
-    # transform hmp to plk
-    run_pipeline.pl -Xmx40g -importGuess ${HMP} \
-                    -export ${FOLDER}/${PLK} \
-                    -exportType Plink
     # prune plink file by ld
     plink --file ${FOLDER}/${PLK}.plk \
-          --indep-pairwise ${winsize} ${VARCOUNT} ${R2} \
-          --geno ${genomiss} \
+          --indep-pairwise ${winsize} ${VARCOUNT} ${r2} \
+          --geno ${GENOMISS} \
           --out ${FOLDER}/${PRUNNED} \
           --allow-extra-chr \
           --make-founders
@@ -470,28 +608,37 @@ for genomiss in 0.1 0.25 0.5; do
                     -includeSiteNamesInFile ${FOLDER}/${PRUNNED}.prune.in \
                     -export ${OUT} \
                     -exportType HapmapDiploid
+    # remove extra files
+    rm ${FOLDER}/*.log
+    rm ${FOLDER}/*.nosex
   done
 done
 
 # count how many markers were left after prunning
-wc -l data/usda_hybrids_SNP-chip.maf-filter.pruned-*.geno-miss-*.hmp.txt
+wc -l ${FOLDER}/hybrids_geno.winsize-*.r2-*.hmp.txt
 ```
 
 Number of markers remaining after pruning the genotypic dataset with different window sizes:
 
-| missing data filter | window size | markers remaining |
-| ------------------- | ----------- | ----------------- |
-| 0.1                 | 10 kb       | 9,482             |
-| 0.1                 | 100 kb      | 8,377             |
-| 0.1                 | 1000 kb     | 5,670             |
-| 0.25                | 10 kb       | 11,777            |
-| 0.25                | 100 kb      | 10,334            |
-| 0.25                | 1000 kb     | 6,834             |
-| 0.5                 | 10 kb       | 12,120            |
-| 0.5                 | 100 kb      | 10,615            |
-| 0.5                 | 1000 kb     | 6,978             |
+| R2   | window size | markers remaining |
+| ---- | ----------- | ----------------- |
+| 0.16 | 10 kb       | 9,975             |
+| 0.16 | 100 kb      | 7,022             |
+| 0.16 | 1000 kb     | 2,041             |
+| 0.25 | 10 kb       | 10,282            |
+| 0.25 | 100 kb      | 7,546             |
+| 0.25 | 1000 kb     | 2,488             |
+| 0.5  | 10 kb       | 11,330            |
+| 0.5  | 100 kb      | 9,441             |
+| 0.5  | 1000 kb     | 4,919             |
 
-We decided to use `data/usda_hybrids_SNP-chip.maf-filter.pruned-100kb.geno-miss-0.25.hmp.txt` to balance missing data, window size and number of markers to build networks.
+```bash
+# copy main geno file to data folder for easy access
+cp analysis/ld_pruning/hybrids_geno.winsize-1000kb.r2-0.16.hmp.txt data
+mv data/hybrids_geno.winsize-1000kb.r2-0.16.hmp.txt data/usda_hybrids_SNP-chip.maf-filter.pruned.hmp.txt
+```
+
+We decided to use the LD pruned dataset based on background LD level (R2 = 0.16) within 1Mb windows. We renamed this file to `data/usda_hybrids_SNP-chip.maf-filter.pruned.hmp.txt`.
 
 > This is the File S5 I mention in the manuscript.
 
