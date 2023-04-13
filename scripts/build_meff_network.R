@@ -19,6 +19,8 @@ positional arguments:
 optional argument:
   --help                      show this helpful message
   --soft-threshold=VALUE      the lowest power for which the scale-free topology fit index curve (default: 10)
+  --meff-permutation          add this option if you want to generate a 'null' network by permuting marker effects
+  --seed=VALUE                seed number for permutation (default: 123)
 
 
 "
@@ -48,6 +50,8 @@ if (!dir.exists(output_folder)) dir.create(output_folder, recursive = TRUE)
 
 # set default of optional args
 soft_threshold <- "10"
+meff_permutation <- FALSE
+seed <- 123
 
 # assert to have the correct optional arguments
 pos_args <- 2
@@ -56,7 +60,7 @@ if (length(args) < pos_args) stop(usage(), "missing positional argument(s)")
 if (length(args) > pos_args) {
   
   opt_args <- args[-1:-pos_args]
-  opt_args_allowed <- c("--soft-threshold")
+  opt_args_allowed <- c("--soft-threshold", "--meff-permutation", "--seed")
   opt_args_requested <- as.character(sapply(opt_args, function(x) unlist(strsplit(x, split = "="))[1]))
   if (any(!opt_args_requested %in% opt_args_allowed)) stop(usage(), "wrong optional argument(s)")
   
@@ -78,12 +82,28 @@ if (suppressWarnings(!is.na(as.integer(soft_threshold)))) {
   stop("Optional argument '--soft-threshold' should be an integer")
 }
 
+if (suppressWarnings(!is.na(as.integer(seed)))) {
+  seed <- as.integer(seed)
+} else {
+  stop("Optional argument '--seed' should be an integer")
+}
+
 
 
 #### build weighted network ----
 
 # load data from previous step
 load(sft_Rdata)
+
+if (meff_permutation) {
+  
+  # permute marker effects
+  set.seed(seed)
+  marker_effects <- data.frame(t(apply(marker_effects, MARGIN = 1, function(x) sample(x, replace = FALSE))))
+  # add back marker names
+  colnames(marker_effects) <- colnames(marker_info)
+  
+}
 
 # calculate the adjacencies, using the soft thresholding power 10
 adjacency <- adjacency(marker_effects, power = soft_threshold)

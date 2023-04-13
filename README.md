@@ -25,6 +25,9 @@ by Rafael Della Coletta and Candice Hirsch
     - [Step 5. QC network modules](#step-5-qc-network-modules)
     - [Step 6. Calculate LD for markers within each module](#step-6-calculate-ld-for-markers-within-each-module)
   - [Relate modules to environmental covariables](#relate-modules-to-environmental-covariables)
+  - [Network validation with permutation](#network-validation-with-permutation)
+    - [Build null networks](#build-null-networks)
+    - [Relate modules from null networks to environmental covariables](#relate-modules-from-null-networks-to-environmental-covariables)
 <!-- TOC END -->
 
 
@@ -1290,4 +1293,192 @@ Rscript scripts/plot_pc_contributions.R \
         data/env_covariables/pca_contributions.txt \
         analysis/networks/YLD/pc_contributions \
         --prop-covariables=0.1
+```
+
+
+
+## Network validation with permutation
+
+To increase our confidence that marker effect networks can identify real signals associated with environmental indices, we generated 100 null networks by permuting the marker effects within environments from a network with at least one module significantly associated with a principal component of the weather data (`meff_gwas`, `norm_minmax`, `min_mod_size_25`, and `pamStage_off`).
+
+
+### Build null networks
+
+Build permuted networks by reshuffling marker effects within each environment:
+
+```bash
+# trait to build network
+TRAIT=YLD
+
+# define initial seed for permutation
+get_seeded_random()
+{
+  seed="$1"
+  openssl enc -aes-256-ctr -pass pass:"$seed" -nosalt < /dev/zero 2> /dev/null
+}
+SEED=52142
+
+# marker effects from rrblup
+for meff_model in gwas; do
+  # type of normalization method to use
+  for norm_method in minmax; do
+    # iterate through permutations
+    for iter in {1..100}; do
+      # folder with results
+      FOLDER=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}
+      # file with saved R variables from step 2
+      RDATA=${FOLDER}/pick_soft_threshold.RData
+      # output folder
+      OUTFOLDER=${FOLDER}/permutation/iter${iter}
+      mkdir -p ${OUTFOLDER}
+      # power for which the scale-free topology fit index curve
+      SFT=24
+      # add permutation option
+      PERMU=meff-permutation
+      # submit job
+      sbatch --export=RDATA=${RDATA},OUTFOLDER=${OUTFOLDER},SFT=${SFT},PERMU=${PERMU},SEED=${SEED} scripts/build_meff_network.sh
+      # use a different seed for next iteration
+      SEED=($(shuf -i 1-100000 -n 1 --random-source=<(get_seeded_random ${SEED})))
+    done
+  done
+done
+```
+
+Define network modules:
+
+```bash
+# trait to build network
+TRAIT=YLD
+
+# marker effects from rrblup
+for meff_model in gwas; do
+  # type of normalization method to use
+  for norm_method in minmax; do
+    # iterate through permutations
+    for iter in {1..100}; do
+      # folder with results
+      FOLDER=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}/permutation/iter${iter}
+      # file with saved R variables from step 2
+      RDATA=${FOLDER}/build_meff_network.RData
+      # power for which the scale-free topology fit index curve
+      SFT=24
+      # minimum number of markers per module
+      for minsize in 25; do
+        # define modules with and without the PAM stage
+        for pam in off; do
+          # threshold to merge similar modules based on their eigengenes
+          MEDISS=0.25
+          # create new output folder
+          OUTFOLDER=${FOLDER}/min_mod_size_${minsize}/pamStage_${pam}
+          mkdir -p ${OUTFOLDER}
+          # submit job
+          sbatch --export=RDATA=${RDATA},OUTFOLDER=${OUTFOLDER},MINSIZE=${minsize},MEDISS=${MEDISS},SFT=${SFT},PAM=${pam} scripts/define_network_modules.sh
+        done
+      done
+    done
+  done
+done
+```
+
+QC modules:
+
+```bash
+# trait to build network
+TRAIT=YLD
+
+# marker effects from rrblup
+for meff_model in gwas; do
+  # type of normalization method to use
+  for norm_method in minmax; do
+    # minimum number of markers per module
+    for minsize in 25; do
+      # define modules with and without the PAM stage
+      for pam in off; do
+        # iterate through permutations
+        for iter in {1..100}; do
+          # folder with results
+          FOLDER=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}/permutation/iter${iter}/min_mod_size_${minsize}/pamStage_${pam}
+          # file with saved R variables from step 2
+          RDATA=${FOLDER}/define_network_modules.RData
+          # power for which the scale-free topology fit index curve
+          SFT=24
+          # number of most important markers to print for each module
+          NHUBS=10
+          # submit job
+          sbatch --export=RDATA=${RDATA},OUTFOLDER=${FOLDER},SFT=${SFT},NHUBS=${NHUBS} scripts/qc_network_modules.sh
+        done
+      done
+    done
+  done
+done
+
+# summarize network quality results
+Rscript scripts/summarize_qc_networks_permutations.R \
+        analysis/networks/YLD \
+        --meff-model=gwas \
+        --norm-method=minmax \
+        --minsize=25 \
+        --pamStage=off \
+        --iters=100
+```
+
+
+### Relate modules from null networks to environmental covariables
+
+Each module of each null network was then correlated with a principal component of the environmental indices, and the number of null networks with correlations as strong or stronger than observed in the real network was recorded.
+
+```bash
+module load R/3.6.0
+
+# trait to build network
+TRAIT=YLD
+
+# marker effects from rrblup
+for meff_model in gwas; do
+  # type of normalization method to use
+  for norm_method in minmax; do
+    # minimum number of markers per module
+    for minsize in 25; do
+      # define modules with and without the PAM stage
+      for pam in off; do
+        # iterate through permutations
+        for iter in {1..100}; do
+          # folder with results
+          FOLDER=analysis/networks/${TRAIT}/meff_${meff_model}/norm_${norm_method}/permutation/iter${iter}/min_mod_size_${minsize}/pamStage_${pam}
+          # file with saved R variables from step 2
+          RDATA=${FOLDER}/define_network_modules.RData
+          # env indices to correlate to modules
+          for idx_type in pca; do
+            # means over entire season
+            [[ ${idx_type} == "means" ]] && EC_FILE=data/env_covariables/env_covariables_means.txt
+            # idx per 3-day intervals
+            [[ ${idx_type} == "intervals" ]] && EC_FILE=data/env_covariables/env_covariables_means_per_intervals.txt
+            # principal components
+            [[ ${idx_type} == "pca" ]] && EC_FILE=data/env_covariables/pca_env_idx.txt
+            # define output folder
+            OUTFOLDER=${FOLDER}/mod_env-idx_${idx_type}
+            # submit job
+            sbatch --export=RDATA=${RDATA},EC_FILE=${EC_FILE},OUTFOLDER=${OUTFOLDER},IDX_TYPE=${idx_type} scripts/relate_modules_to_env_idx.sh
+          done
+        done
+      done
+    done
+  done
+done
+
+# summarize correlations
+Rscript scripts/summarize_mod-env-idx_permutations.R analysis/networks/YLD/meff_gwas/norm_minmax/permutation --minsize=25 --pamStage=off --idx-type=pca --iters=100
+```
+
+Check how many modules are associated with env PCs in each permutation:
+
+```bash
+Rscript scripts/qc_permutation_results.R \
+        analysis/networks/YLD/module-env-idx_per_network.pca.txt \
+        analysis/networks/YLD/meff_gwas/norm_minmax/permutation/permutation_module-env-idx_per_network.pca.txt \
+        --meff-model=gwas \
+        --norm-method=minmax \
+        --minsize=25 \
+        --pamStage=off \
+        --pval-threshold=0.05
 ```

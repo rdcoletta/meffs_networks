@@ -12,13 +12,20 @@
 
 module load R/3.6.0
 
+# check whether --per-intervals option was requested or not -- if not, set it to blank
+[[ -z ${PERMU} ]] && PERMU="" || PERMU="--${PERMU}"
+[[ -z ${SEED} ]] && SEED="" || SEED="--seed=${SEED}"
+
 # go to project folder
 cd ~/projects/marker-effects_networks
 
 echo "file with R variables from pick_soft_threshold.R script: ${RDATA}"
 echo "output folder: ${OUTFOLDER}"
 echo "lowest power for which the scale-free topology fit index curve: ${SFT}"
+if [[ -n ${PERMU} ]]; then
+  echo "marker effects permutation: TRUE (seed: ${SEED})"
+fi
 echo ""
 
 # estimate effects - all data
-Rscript scripts/build_meff_network.R ${RDATA} ${OUTFOLDER} --soft-threshold=${SFT}
+Rscript scripts/build_meff_network.R ${RDATA} ${OUTFOLDER} --soft-threshold=${SFT} ${PERMU} ${SEED}
