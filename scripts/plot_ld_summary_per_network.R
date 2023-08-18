@@ -80,9 +80,18 @@ ggsave(plot = ld_dist, filename = paste0(output_folder, "/ld_dist_all_networks.p
 # calculate proportion markers in ld per module
 prop_markers_ld_per_mod <- ld_results %>% 
   group_by(meff_model, norm_method, minsize, pamStage, module) %>% 
-  summarize(prop_markers_ld = sum(R2 >= 0.9) / n()) %>% 
+  summarize(n_markers_in_mod = length(unique(c(SNP_A, SNP_B))),
+            n_connections_in_mod = n(),
+            mean_ld = mean(R2),
+            median_ld = median(R2),
+            below_background_ld = sum(R2 < 0.16) / n_connections_in_mod,
+            ld_less_0.25 = sum(R2 < 0.25) / n_connections_in_mod,
+            ld_0.25_to_0.5 = sum(R2 >= 0.25 & R2 < 0.5) / n_connections_in_mod,
+            ld_0.5_to_0.75 = sum(R2 >= 0.5 & R2 < 0.75) / n_connections_in_mod,
+            ld_more_0.75 = sum(R2 >= 0.75) / n_connections_in_mod,
+            ld_more_0.9 = sum(R2 >= 0.9) / n_connections_in_mod) %>%
   ungroup()
-fwrite(prop_markers_ld_per_mod, file = paste0(output_folder, "/n_markers_ld_networks.txt"),
+fwrite(prop_markers_ld_per_mod, file = paste0(output_folder, "/prop_markers_ld.per-modules.txt"),
        quote = FALSE, sep = "\t", na = NA, row.names = FALSE)
 
 # plot proportion markers in ld per module
@@ -94,7 +103,7 @@ prop_markers_ld_plot <- prop_markers_ld_per_mod %>%
   ggplot() +
   facet_nested(~ meff_model + norm_method + minsize + pamStage, scales = "free",
                nest_line = element_line(linetype = 1, color = "gray80", lineend = "butt")) +
-  geom_boxplot(aes(x = network, y = prop_markers_ld), outlier.size = 0.25, show.legend = FALSE) +
+  geom_boxplot(aes(x = network, y = ld_more_0.9), outlier.size = 0.25, show.legend = FALSE) +
   coord_cartesian(ylim = c(0, 1)) +
   labs(x = "Networks", y = "Proportion of marker pairs in LD within a module") +
   theme_minimal() +
@@ -102,32 +111,55 @@ prop_markers_ld_plot <- prop_markers_ld_per_mod %>%
         panel.grid.minor = element_blank(),
         panel.grid.major.x = element_blank(),
         panel.spacing = unit(0, "lines"))
-ggsave(plot = prop_markers_ld_plot, filename = paste0(output_folder, "/n_markers_ld_networks.pdf"),
+ggsave(plot = prop_markers_ld_plot, filename = paste0(output_folder, "/prop_markers_high-ld.per-modules.pdf"),
        device = "pdf", width = 10, height = 6)
+
+# summarize proportion markers in ld with 
+prop_markers_ld_all_net <- prop_markers_ld_per_mod %>% 
+  group_by(meff_model, norm_method, minsize, pamStage) %>% 
+  summarize(n_markers_in_mod = mean(n_markers_in_mod),
+            n_connections_in_mod = mean(n_connections_in_mod),
+            mean_ld = mean(mean_ld),
+            median_ld = mean(median_ld),
+            below_background_ld = mean(below_background_ld),
+            ld_less_0.25 = mean(ld_less_0.25),
+            ld_0.25_to_0.5 = mean(ld_0.25_to_0.5),
+            ld_0.5_to_0.75 = mean(ld_0.5_to_0.75),
+            ld_more_0.75 = mean(ld_more_0.75),
+            ld_more_0.9 = mean(ld_more_0.9))
+fwrite(prop_markers_ld_all_net, file = paste0(output_folder, "/prop_markers_ld.per-networks.txt"),
+       quote = FALSE, sep = "\t", na = NA, row.names = FALSE)
 
 
 
 #### debug ----
 
-# ld_results_file <- "analysis/networks/YLD/summary_ld_per_network.TEST.txt"
+# ld_results_file <- "analysis/networks/YLD/summary_ld_per_network.txt.gz"
 # output_folder <- "analysis/networks/YLD/qc_networks"
 
 
-# ld_summary <- fread(paste0(output_folder, "/n_markers_ld_networks.txt"), header = TRUE, data.table = FALSE)
+# ld_summary <- fread(paste0(output_folder, "/prop_markers_ld.per-modules.txt"), header = TRUE, data.table = FALSE)
 # 
 # ld_summary %>%
 #   filter(meff_model == "gwas"
 #          & norm_method == "minmax"
 #          & minsize == 25
 #          & pamStage == "off"
-#          & module == "firebrick2")
+#          & module == "salmon")
+# 
+# ld_summary <- fread(paste0(output_folder, "/prop_markers_ld.per-networks.txt"), header = TRUE, data.table = FALSE)
 # 
 # ld_summary %>%
 #   group_by(meff_model, norm_method, minsize, pamStage) %>%
-#   summarize(avg_prop_ld = mean(prop_markers_ld),
-#             se_prop_ld = avg_prop_ld / sqrt(n())) %>%
+#   summarize(avg_prop_not_ld = mean(below_background_ld),
+#             se_prop_not_ld = avg_prop_not_ld / sqrt(n()),
+#             min = min(below_background_ld),
+#             max = max(below_background_ld)) %>%
 #   ungroup()
 # 
 # ld_summary %>%
-#   summarize(avg_prop_ld = mean(prop_markers_ld),
-#             se_prop_ld = avg_prop_ld / sqrt(n()))
+#   filter(meff_model == "gwas") %>% 
+#   summarize(avg_prop_not_ld = mean(below_background_ld),
+#             se_prop_not_ld = avg_prop_not_ld / sqrt(n()),
+#             min = min(below_background_ld),
+#             max = max(below_background_ld))

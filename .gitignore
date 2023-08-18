@@ -7,6 +7,7 @@ supp_materials/*.csv
 supp_materials/*.txt
 supp_materials/.DS_Store
 supp_materials/list_supp_materials.xlsx
+supp_materials/submission/*
 .DS_Store
 .Rproj.user
 *.Rhistory

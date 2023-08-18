@@ -132,7 +132,7 @@ rm(list = ls())
 
 results_folder <- "analysis/networks/YLD"
 qc_networks_file <- paste0(results_folder, "/summary_qc_networks.txt")
-net_alias_file <- "supp_materials/supp_table6.xlsx"
+net_alias_file <- "supp_materials/supp_table4.xlsx"
 output_folder <- "figures"
 
 ##### a #####
@@ -140,7 +140,7 @@ output_folder <- "figures"
 # create empty df to store results
 sft_all <- data.frame(stringsAsFactors = FALSE)
 
-for (model in c("rrblup", "gwas")) {
+for (model in "gwas") {
   for (norm in c("minmax", "zscore")) {
 
     if (norm == "minmax") {
@@ -178,10 +178,9 @@ sft_all$signed_R2 <- -sign(sft_all$slope) * sft_all$SFT.R.sq
 
 # plot power distribution
 sft_plot <- sft_all %>%
-  mutate(norm = factor(norm, levels = c("minmax", "zscore"), labels = c("Minmax", "Z-score")),
-         model = factor(model, levels = c("gwas", "rrblup"), labels = c("GWAS", "RR-BLUP"))) %>%
+  mutate(norm = factor(norm, levels = c("minmax", "zscore"), labels = c("Minmax", "Z-score"))) %>%
   ggplot(aes(x = Power, y = signed_R2, group = as.factor(cv), color = as.factor(cv))) +
-  facet_grid(norm ~ model) +
+  facet_grid(~ norm) +
   geom_line() +
   geom_point(size = 1.5) +
   coord_cartesian(ylim = c(-1, 1)) +
@@ -203,12 +202,11 @@ ggsave(filename = paste0(output_folder, "/fig_2a.png"), plot = sft_plot,
 ##### b #####
 
 plot_total_markers <- sft_all %>%
-  mutate(norm = factor(norm, levels = c("minmax", "zscore"), labels = c("Minmax", "Z-score")),
-         model = factor(model, levels = c("gwas", "rrblup"), labels = c("GWAS", "RR-BLUP"))) %>%
+  mutate(norm = factor(norm, levels = c("minmax", "zscore"), labels = c("Minmax", "Z-score"))) %>%
   group_by(model, norm, cv) %>%
   summarize(total.markers = mean(total.markers, na.rm = TRUE)) %>%
   ggplot(aes(x = as.factor(cv), y = total.markers)) +
-  facet_grid2(norm ~ model, scales = "free_x", independent = "x") +
+  facet_grid2(~ norm, scales = "free_x", independent = "x") +
   geom_col() +
   # scale_y_continuous(breaks = seq(0, 10000, 1000)) +
   labs(x = "CV cut-off", y = "Total markers in network") +
@@ -230,9 +228,9 @@ net_alias$order <- paste(net_alias$Model, net_alias$Normalization, net_alias$`Mi
 qc_results <- fread(qc_networks_file, header = TRUE, data.table = FALSE)
 # adjust data to match aliases order
 qc_results <- qc_results %>%
-  filter(source == "adjacency") %>%
+  filter(source == "adjacency", meff_model == "gwas") %>%
   mutate(norm_method = factor(norm_method, levels = c("minmax", "zscore"), labels = c("Minmax", "Z-score")),
-         meff_model = factor(meff_model, levels = c("gwas", "rrblup"), labels = c("GWAS", "RR-BLUP"))) %>%
+         meff_model = factor(meff_model, levels = "gwas", labels = "GWAS")) %>%
   unite(col = "order", meff_model:pamStage, remove = FALSE) %>%
   mutate(order = match(order, net_alias$order)) %>%
   arrange(order)
@@ -253,8 +251,8 @@ plot_markers_per_mod <- qc_results %>%
                          labels = c("Total modules", "Unassigned markers", "Markers per module"))) %>%
   ggplot() +
   facet_wrap(~ metric, nrow = 3, scales = "free_y") +
-  geom_col(data = function(x) subset(x, metric == "Total modules"),
-           aes(x = order, y = values), fill = "grey40", show.legend = FALSE) +
+  geom_bar(data = function(x) subset(x, metric == "Total modules"),
+           aes(x = order, y = values), fill = "grey40", show.legend = FALSE, stat = "summary", fun = mean) +
   geom_col(data = function(x) subset(x, metric == "Unassigned markers"  & module == "grey"),
            aes(x = order, y = values), fill = "grey", show.legend = FALSE) +
   geom_boxplot(data = function(x) subset(x, metric == "Markers per module"),
@@ -264,20 +262,36 @@ plot_markers_per_mod <- qc_results %>%
   theme(panel.grid = element_blank(),
         axis.title = element_text(size = 12),
         axis.text = element_text(size = 10),
-        axis.text.x = element_text(size = 8))
+        axis.text.x = element_text(size = 8),
+        axis.text.y = element_text(size = 8))
 ggsave(filename = paste0(output_folder, "/fig_2c.png"), plot = plot_markers_per_mod,
        device = "png", dpi = 350, units = "in", width = 4, height = 3)
 
 # clean R environment
 rm(list = ls())
 
+qc_results %>%
+  group_by(order, meff_model, norm_method, minsize, pamStage, module) %>%
+  summarize(n_markers = n()) %>%
+  ungroup() %>%
+  group_by(order, meff_model, norm_method, minsize, pamStage) %>%
+  mutate(n_modules = n()) %>%
+  ungroup() %>%
+  mutate(n_markers_no_grey = NA,
+         n_markers_no_grey = case_when(module != "grey" ~ n_markers)) %>% 
+  group_by(order, meff_model, norm_method, minsize, pamStage) %>% 
+  summarize(n_mods = mean(n_modules),
+            n_markers_per_mod_mean = mean(n_markers),
+            n_markers_per_mod_median = median(n_markers),
+            n_markers_per_mod_min = min(n_markers),
+            n_markers_per_mod_max = max(n_markers))
 
 
 #### figure 3 ----
 
 results_folder <- "analysis/networks/YLD"
 qc_networks_file <- paste0(results_folder, "/summary_qc_networks.txt")
-net_alias_file <- "supp_materials/supp_table6.xlsx"
+net_alias_file <- "supp_materials/supp_table4.xlsx"
 output_folder <- "figures"
 
 # get network aliases
@@ -288,9 +302,9 @@ net_alias$order <- paste(net_alias$Model, net_alias$Normalization, net_alias$`Mi
 qc_results <- fread(qc_networks_file, header = TRUE, data.table = FALSE)
 # adjust data to match aliases order
 qc_results <- qc_results %>%
-  filter(source == "adjacency") %>%
+  filter(source == "adjacency", meff_model == "gwas") %>%
   mutate(norm_method = factor(norm_method, levels = c("minmax", "zscore"), labels = c("Minmax", "Z-score")),
-         meff_model = factor(meff_model, levels = c("gwas", "rrblup"), labels = c("GWAS", "RR-BLUP"))) %>%
+         meff_model = factor(meff_model, levels = "gwas", labels = "GWAS")) %>%
   unite(col = "order", meff_model:pamStage, remove = FALSE) %>%
   mutate(order = match(order, net_alias$order)) %>%
   arrange(order)
@@ -362,7 +376,7 @@ output_folder <- "figures"
 type_connect_str <- "TOM"
 soft_threshold <- 24
 edge_threshold <- 0.01
-mod <- "firebrick2"
+mod <- "salmon"
 ld_module <- paste0(mod_ld_folder, "/ld_markers_", mod, ".ld.gz")
 
 ##### a #####
@@ -374,6 +388,7 @@ ld_module <- fread(ld_module, header = TRUE, data.table = FALSE)
 ld_dist_plot <- ggplot(ld_module, aes(x = R2)) +
   geom_histogram(data = subset(ld_module, R2 >= 0.9), color = "black", fill = "gold2", binwidth = 0.05) +
   geom_histogram(data = subset(ld_module, R2 < 0.9), color = "black", fill = "grey50", binwidth = 0.05) +
+  geom_vline(xintercept = 0.16, linetype = "dashed", color = "#80808080") +
   coord_cartesian(xlim = c(0, 1)) +
   labs(x = bquote("Linkage disequilibrium" ~ (r^2)), y = "Count") +
   theme_bw() +
@@ -381,7 +396,7 @@ ld_dist_plot <- ggplot(ld_module, aes(x = R2)) +
         axis.title = element_text(size = 12),
         axis.text = element_text(size = 10))
 ggsave(filename = paste0(output_folder, "/fig_4a.png"), plot = ld_dist_plot,
-       device = "png", dpi = 350, units = "in", width = 4, height = 2)
+       device = "png", dpi = 350, units = "in", width = 4, height = 2.5)
 
 ##### b #####
 
@@ -462,13 +477,13 @@ plot_net_ld <- ggplot() +
              aes(x = x, y = y), color = "black", size = 3) +
   theme_blank()
 ggsave(filename = paste0(output_folder, "/fig_4b.png"), plot = plot_net_ld,
-       device = "png", dpi = 350, units = "in", width = 4, height = 3)
+       device = "png", dpi = 350, units = "in", width = 4, height = 2.5)
 
 ##### c (MSI) #####
 # ran this on MSI
 
 # get network aliases
-net_alias_file <- "supp_materials/supp_table6.xlsx"
+net_alias_file <- "supp_materials/supp_table4.xlsx"
 net_alias <- read_excel(net_alias_file)
 net_alias$order <- paste(net_alias$Model, net_alias$Normalization, net_alias$`Minimum module size`, net_alias$pamStage, sep = "_")
 
@@ -480,8 +495,9 @@ ld_results_file <- "analysis/networks/YLD/summary_ld_per_network.txt.gz"
 ld_results <- fread(ld_results_file, header = TRUE, data.table = FALSE)
 # adjust files to match network aliases
 ld_results <- ld_results %>%
+  filter(meff_model == "gwas") %>% 
   mutate(norm_method = factor(norm_method, levels = c("minmax", "zscore"), labels = c("Minmax", "Z-score")),
-         meff_model = factor(meff_model, levels = c("gwas", "rrblup"), labels = c("GWAS", "RR-BLUP"))) %>%
+         meff_model = factor(meff_model, levels = "gwas", labels = "GWAS")) %>%
   unite(col = "order", meff_model:pamStage, remove = FALSE) %>%
   mutate(order = match(order, net_alias$order)) %>%
   arrange(order)
@@ -491,6 +507,7 @@ ld_dist <- ld_results %>%
   mutate(order = factor(order)) %>%
   ggplot(aes(x = R2, y = order, fill = ..x..)) +
   geom_density_ridges_gradient(scale = 8, rel_min_height = 0.001, size = 0.1) +
+  geom_vline(xintercept = 0.16, linetype = "dashed", color = "#80808080") +
   scale_fill_binned(breaks = seq(0, 1, 0.1), guide = guide_bins(show.limits = TRUE)) +
   labs(x = bquote("Linkage disequilibrium" ~ (r^2)), y = "Networks") +
   theme_bw() +
@@ -503,7 +520,7 @@ ld_dist <- ld_results %>%
                guide = "bins",
                breaks = seq(0, 1, 0.1), limits = c(0, 1), show.limits = TRUE)
 ggsave(filename = paste0(output_folder, "/fig_4c.pdf"), plot = ld_dist,
-       device = "pdf", units = "in", width = 4, height = 6)
+       device = "pdf", units = "in", width = 4, height = 5)
 
 # converted to "png" on my Mac (300dpi)
 
@@ -569,11 +586,11 @@ mod_env_idx_results$module <- factor(mod_env_idx_results$module,
 plot_cor_mod_pc <- ggplot(mod_env_idx_results, aes(x = pval, y = cor, fill = module, label = paste0(env_idx, "\n", module))) +
   geom_hline(yintercept = 0, color = "gray50") +
   geom_vline(xintercept = 0.5, color = "gray50") +
-  geom_point(data = head(mod_env_idx_results, n = 3), shape = 21, size = 3,
-             fill = mod_env_idx_results$module[1:3], show.legend = FALSE) +
-  geom_point(data = tail(mod_env_idx_results, n = nrow(mod_env_idx_results) - 3),
+  geom_point(data = head(mod_env_idx_results, n = 1), shape = 21, size = 3,
+             fill = mod_env_idx_results$module[1], show.legend = FALSE) +
+  geom_point(data = tail(mod_env_idx_results, n = nrow(mod_env_idx_results) - 1),
              size = 3, color = "grey60", alpha = 0.4, show.legend = FALSE) +
-  geom_label_repel(data = head(mod_env_idx_results, n = 3), max.overlaps = 10, nudge_y = c(-0.3, 0.5, 0.3), nudge_x = c(0, 0, 0.2),
+  geom_label_repel(data = head(mod_env_idx_results, n = 1), max.overlaps = 10, nudge_y = -0.3, nudge_x = 0,
                    fill = "white", size = 3, show.legend = FALSE) +
   coord_cartesian(xlim = c(0, 1), ylim = c(-1, 1)) +
   labs(x = "p-values", y = "Correlation") +
@@ -582,7 +599,7 @@ plot_cor_mod_pc <- ggplot(mod_env_idx_results, aes(x = pval, y = cor, fill = mod
         axis.title = element_text(size = 12),
         axis.text = element_text(size = 10))
 ggsave(filename = paste0(output_folder, "/fig_6a.png"), plot = plot_cor_mod_pc,
-       device = "png", dpi = 350, units = "in", width = 4, height = 5)
+       device = "png", dpi = 350, units = "in", width = 4, height = 4)
 
 ##### b #####
 
@@ -715,10 +732,10 @@ rm(list = ls())
 
 mod_env_idx_cor_file <- "analysis/networks/YLD/module-env-idx_per_network.pca.txt"
 env_idx_file <- "data/env_covariables/pca_env_idx.txt"
-net_alias_file <- "supp_materials/supp_table6.xlsx"
+net_alias_file <- "supp_materials/supp_table4.xlsx"
 output_folder <- "figures"
 p_value <- 0.11
-indices <- c("PC4", "PC5", "PC7", "PC9")
+indices <- "PC6"
 
 # load file with network aliases
 net_alias <- read_excel(net_alias_file)
@@ -732,7 +749,7 @@ for (idx in indices) {
   # load module-env index relationship
   mod_env_idx_cor <- fread(mod_env_idx_cor_file, header = TRUE, data.table = FALSE)
   # select only significant associations
-  mod_env_idx_cor <- subset(mod_env_idx_cor, pval <= p_value)
+  mod_env_idx_cor <- subset(mod_env_idx_cor, meff_model == "gwas" & pval <= p_value)
   rownames(mod_env_idx_cor) <- 1:nrow(mod_env_idx_cor)
   # round numbers
   mod_env_idx_cor$cor <- sapply(mod_env_idx_cor$cor, function(x) round(x, digits = 2))
@@ -771,7 +788,7 @@ for (idx in indices) {
     network_mod_markers <- data.frame(network = net_name,
                                       network_mod_markers, stringsAsFactors = FALSE)
     network_mod_markers <- tidyr::unite(network_mod_markers, Network:module, col = "network_module", sep = "-")
-    # get accuracy results
+    # append to main df
     markers_mod_idx <- rbind(markers_mod_idx, network_mod_markers)
 
   }
@@ -837,11 +854,13 @@ for (idx in indices) {
                       mainbar.y.label = paste0("Shared\nmarkers\nassociated\nwith ", idx), sets.x.label = "Markers per module",
                       order.by = "freq", mb.ratio = c(0.4, 0.6), nsets = 100, text.scale = c(0.8, 1, 1, 0.8, 1, 1))
   # text.scale = c(intersection size title, intersection size tick labels, set size title, set size tick labels, set names, numbers above bars)
-  png(paste0(output_folder, "/fig_7", letters[which(idx == indices)], ".png"), units = "in", res = 350, width = 4, height = 2.5)
+  pdf(paste0(output_folder, "/fig_7", letters[which(idx == indices)], ".pdf"), width = 4, height = 2.5)
   print(upset_plot)
   dev.off()
 
 }
+
+# converted to "png" on my Mac (300dpi)
 
 # clean R environment
 rm(list = ls())
@@ -878,7 +897,7 @@ output_folder <- "figures"
 # create empty df to store results
 sft_all <- data.frame(stringsAsFactors = FALSE)
 
-for (model in c("rrblup", "gwas")) {
+for (model in "gwas") {
   for (norm in c("minmax", "zscore")) {
 
     if (norm == "minmax") {
@@ -918,9 +937,9 @@ sft_all$signed_R2 <- -sign(sft_all$slope) * sft_all$SFT.R.sq
 
 mean_k_plot <- sft_all %>%
   mutate(norm = factor(norm, levels = c("minmax", "zscore"), labels = c("Minmax", "Z-score")),
-         model = factor(model, levels = c("gwas", "rrblup"), labels = c("GWAS", "rrBLUP"))) %>%
+         model = factor(model, levels = "gwas", labels = "GWAS")) %>%
   ggplot(aes(x = Power, y = mean.k., group = as.factor(cv), color = as.factor(cv))) +
-  facet_grid(model ~ norm) +
+  facet_grid(~ norm) +
   geom_line() +
   geom_point() +
   scale_color_viridis_d(end = 0.9, option = "B", direction = -1) +
@@ -937,9 +956,9 @@ ggsave(filename = paste0(output_folder, "/supp_fig_4a.png"), plot = mean_k_plot,
 
 median_k_plot <- sft_all %>%
   mutate(norm = factor(norm, levels = c("minmax", "zscore"), labels = c("Minmax", "Z-score")),
-         model = factor(model, levels = c("gwas", "rrblup"), labels = c("GWAS", "rrBLUP"))) %>%
+         model = factor(model, levels = "gwas", labels = "GWAS")) %>%
   ggplot(aes(x = Power, y = median.k., group = as.factor(cv), color = as.factor(cv))) +
-  facet_grid(model ~ norm) +
+  facet_grid(~ norm) +
   geom_line() +
   geom_point() +
   scale_color_viridis_d(end = 0.9, option = "B", direction = -1) +
@@ -965,9 +984,9 @@ input_folder <- "analysis/networks/YLD"
 output_folder <- "figures"
 i <- 1
 
-for (model in c("gwas", "rrblup")) {
+for (model in "gwas") {
   for (norm in c("minmax", "zscore")) {
-    for (size in c(25, 50, 100)) {
+    for (size in c(10, 25)) {
       for (pam in c("off", "on")) {
 
         # get filename
@@ -975,19 +994,14 @@ for (model in c("gwas", "rrblup")) {
                            "/min_mod_size_", size, "/pamStage_", pam,
                            "/define_network_modules.RData")
 
-        # exclude networks with gwas and 100 min mod size
-        if (!all(model == "gwas" & size == 100)) {
-
-          # load data
-          load(meff_mod)
-          # plot heatmap
-          pdf(paste0(output_folder, "/supp-fig_5-net_", i, ".pdf"), width = 8, height = 10)
-          pheatmap(mat = t(MEs), angle_col = 0, main = paste0("Network ", i))
-          dev.off()
-          # add count
-          i <- i + 1
-
-        }
+        # load data
+        load(meff_mod)
+        # plot heatmap
+        pdf(paste0(output_folder, "/supp-fig_5-net_", i, ".pdf"), width = 8, height = 10)
+        pheatmap(mat = t(MEs), angle_col = 0, main = paste0("Network ", i))
+        dev.off()
+        # add count
+        i <- i + 1
 
       }
     }
@@ -1007,50 +1021,45 @@ env_idx_file <- "data/env_covariables/pca_env_idx.txt"
 output_folder <- "figures"
 i <- 1
 
-for (model in c("gwas", "rrblup")) {
+for (model in "gwas") {
   for (norm in c("minmax", "zscore")) {
-    for (size in c(25, 50, 100)) {
+    for (size in c(10, 25)) {
       for (pam in c("off", "on")) {
 
         # get filename
         meff_mod_Rdata <- paste0("analysis/networks/YLD/meff_", model, "/norm_", norm, "/min_mod_size_", size,
                                  "/pamStage_", pam, "/define_network_modules.RData")
 
-        # exclude networks with gwas and 100 min mod size
-        if (!all(model == "gwas" & size == 100)) {
-
-          # load data
-          mod_env_idx_results <- fread(mod_env_idx_cor_file, header = TRUE, data.table = FALSE)
-
-          # select network of interest
-          mod_env_idx_results <- subset(mod_env_idx_results, meff_model == model & norm_method == norm &
-                                          minsize == size & pamStage == pam)
-          rownames(mod_env_idx_results) <- 1:nrow(mod_env_idx_results)
-
-          # adjust factor levels
-          mod_env_idx_results$module <- gsub("^ME", "", mod_env_idx_results$module, perl = TRUE)
-          mod_env_idx_results$module <- factor(mod_env_idx_results$module,
-                                               levels = unique(mod_env_idx_results$module))
-
-          # plot association
-          plot_cor_mod_pc <- ggplot(mod_env_idx_results, aes(x = pval, y = cor, fill = module, label = paste0(env_idx, "\n", module))) +
-            geom_hline(yintercept = 0, color = "gray50") +
-            geom_vline(xintercept = 0.5, color = "gray50") +
-            geom_point(data = head(mod_env_idx_results, n = 3), shape = 21, fill = levels(mod_env_idx_results$module)[1:3], show.legend = FALSE) +
-            geom_point(data = tail(mod_env_idx_results, n = nrow(mod_env_idx_results) - 3), color = "grey60", show.legend = FALSE) +
-            geom_label_repel(data = head(mod_env_idx_results, n = 3), max.overlaps = 50,
-                             fill = "white", size = 2, show.legend = FALSE) +
-            coord_cartesian(xlim = c(0, 1), ylim = c(-1, 1)) +
-            labs(title = paste0("Network ", i), x = "p-values", y = "Correlation") +
-            theme_bw() +
-            theme(panel.grid = element_blank())
-          ggsave(filename = paste0(output_folder, "/supp-fig_7-net_", i, ".pdf"), plot = plot_cor_mod_pc,
-                 device = "pdf", units = "in", width = 4, height = 4)
-
-          # add count
-          i <- i + 1
-
-        }
+        # load data
+        mod_env_idx_results <- fread(mod_env_idx_cor_file, header = TRUE, data.table = FALSE)
+        
+        # select network of interest
+        mod_env_idx_results <- subset(mod_env_idx_results, meff_model == model & norm_method == norm &
+                                        minsize == size & pamStage == pam)
+        rownames(mod_env_idx_results) <- 1:nrow(mod_env_idx_results)
+        
+        # adjust factor levels
+        mod_env_idx_results$module <- gsub("^ME", "", mod_env_idx_results$module, perl = TRUE)
+        mod_env_idx_results$module <- factor(mod_env_idx_results$module,
+                                             levels = unique(mod_env_idx_results$module))
+        
+        # plot association
+        plot_cor_mod_pc <- ggplot(mod_env_idx_results, aes(x = pval, y = cor, fill = module, label = paste0(env_idx, "\n", module))) +
+          geom_hline(yintercept = 0, color = "gray50") +
+          geom_vline(xintercept = 0.5, color = "gray50") +
+          geom_point(data = head(mod_env_idx_results, n = 3), shape = 21, fill = levels(mod_env_idx_results$module)[1:3], show.legend = FALSE) +
+          geom_point(data = tail(mod_env_idx_results, n = nrow(mod_env_idx_results) - 3), color = "grey60", show.legend = FALSE) +
+          geom_label_repel(data = head(mod_env_idx_results, n = 3), max.overlaps = 50,
+                           fill = "white", size = 2, show.legend = FALSE) +
+          coord_cartesian(xlim = c(0, 1), ylim = c(-1, 1)) +
+          labs(title = paste0("Network ", i), x = "p-values", y = "Correlation") +
+          theme_bw() +
+          theme(panel.grid = element_blank())
+        ggsave(filename = paste0(output_folder, "/supp-fig_7-net_", i, ".pdf"), plot = plot_cor_mod_pc,
+               device = "pdf", units = "in", width = 4, height = 4)
+        
+        # add count
+        i <- i + 1
 
       }
     }
